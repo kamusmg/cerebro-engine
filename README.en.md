@@ -15,6 +15,10 @@ tokens, faster answers.
 [![Free](https://img.shields.io/badge/cost-%240%20·%20local-brightgreen)]()
 [![Recall](https://img.shields.io/badge/recall-20%2F24%20measured-orange)]()
 
+<br>
+
+<img src="docs/demo.svg" alt="ask demo: a Portuguese question finds the right files" width="720">
+
 </div>
 
 ---

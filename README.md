@@ -16,6 +16,10 @@ tokens, resposta mais rápida.
 [![Recall](https://img.shields.io/badge/recall-20%2F24%20medido-orange)]()
 [![feito no](https://img.shields.io/badge/feito%20no-🇧🇷%20Brasil-009c3b)]()
 
+<br>
+
+<img src="docs/demo.svg" alt="demo do ask: uma pergunta em português encontra os arquivos certos" width="720">
+
 </div>
 
 ---
