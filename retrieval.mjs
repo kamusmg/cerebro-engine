@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const REPO = import.meta.dirname;
 const REWRITE_CACHE = path.join(REPO, '.rewrite-cache.json');
@@ -279,6 +280,23 @@ export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false 
     .sort((a, b) => (rrf.get(b.id) ?? 0) - (rrf.get(a.id) ?? 0));
 
   return { G, escolhidos, seeds, rw, dist, rrf, totalArquivos: scoreArquivo.size };
+}
+
+// Pergunta AMPLA ("como funciona", "visão geral") não é caso de travessia: BFS responde mal e
+// caro. Pra ela existe o resumo hierárquico cacheado (nível GraphRAG). Isso morava só no ask.mjs
+// — o MCP chamava consultar() direto e a IA levava travessia ruidosa em pergunta arquitetural.
+// Agora vive aqui, e os DOIS clientes (CLI e MCP) passam por este mesmo portão.
+export const AMPLA = /como (o projeto |esse projeto |ele |isso )?(funciona|trabalha)|vis[aã]o geral|o que (é|faz) (o|esse|este)|arquitetura d|overview|resum(o|e) (o|do|desse)/i;
+
+// devolve o resumo cacheado do projeto, ou null (pergunta específica, ou projeto sem resumo)
+export function resumoAmplo(pergunta, nomeProjeto) {
+  if (!AMPLA.test(pergunta)) return null;
+  // fileURLToPath e não .pathname: o caminho de instalação pode ter espaço, e o pathname cru
+  // devolve %20 (e "/D:/..." no Windows) — o existsSync falharia CALADO e a pergunta ampla
+  // voltaria a cair na travessia cara sem ninguém perceber.
+  const f = path.join(path.dirname(fileURLToPath(import.meta.url)), 'resumos', `${nomeProjeto}.md`);
+  if (!fs.existsSync(f)) return null;
+  return `${fs.readFileSync(f, 'utf8')}\n[resumo cacheado de ${nomeProjeto} — pra detalhe, faça uma pergunta específica ao grafo]`;
 }
 
 // formata igual à saída do graphify (NODE/EDGE) pra medição e leitura continuarem valendo
