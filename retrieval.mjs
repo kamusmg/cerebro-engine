@@ -69,10 +69,14 @@ const hash = (s) => {
 const leJson = (f, padrao) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return padrao; } };
 
 async function reescreve(pergunta) {
-  if (!KEY) return { termos: [], origem: 'sem-chave' };
+  // O CACHE VEM PRIMEIRO, antes de exigir chave: ele é dado LOCAL, já pago. A ordem invertida
+  // fazia o motor sem GEMINI_API_KEY devolver ZERO seed mesmo com a resposta em disco — medido:
+  // 22 nós → 0 na mesma pergunta, e o recall do gabarito caía 20/24 → 17/24, apagando a
+  // vantagem sobre o baseline. Quem não tem chave é exatamente quem mais precisa do cache.
   const cache = leJson(REWRITE_CACHE, {});
   const chave = hash(normaliza(pergunta));
   if (cache[chave]) return { termos: cache[chave], origem: 'cache' };
+  if (!KEY) return { termos: [], origem: 'sem-chave' };
 
   const prompt = [
     `Uma pergunta em português sobre um código-fonte (identificadores costumam ser em inglês).`,
@@ -286,11 +290,31 @@ export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false 
 // caro. Pra ela existe o resumo hierárquico cacheado (nível GraphRAG). Isso morava só no ask.mjs
 // — o MCP chamava consultar() direto e a IA levava travessia ruidosa em pergunta arquitetural.
 // Agora vive aqui, e os DOIS clientes (CLI e MCP) passam por este mesmo portão.
-export const AMPLA = /como (o projeto |esse projeto |ele |isso )?(funciona|trabalha)|vis[aã]o geral|o que (é|faz) (o|esse|este)|arquitetura d|overview|resum(o|e) (o|do|desse)/i;
+// A pergunta ampla fala do PROJETO INTEIRO. A versão anterior aceitava "o que faz o <qualquer
+// coisa>" e "como funciona o <qualquer coisa>", então "o que faz o scan de segredos" (pergunta
+// específica, alvo real no grafo) recebia o resumo do projeto: recall zero. Agora o alvo tem
+// que ser o próprio projeto — ou a pergunta ser genérica por natureza (visão geral/overview).
+const ALVO_PROJETO = '(o |esse |este |ele |isso |aqui )?(projeto|projetinho|reposit[óo]rio|repo|sistema|c[óo]digo|codebase)';
+export const AMPLA = new RegExp(
+  `vis[aã]o geral|overview`
+  // as duas ordens: "como o projeto funciona" e "como funciona o projeto"
+  + `|como ${ALVO_PROJETO} (funciona|trabalha)`
+  + `|como (funciona|trabalha) ${ALVO_PROJETO}\\b`
+  // "é" com e sem acento — quem digita rápido no chat come o acento
+  + `|o que ([ée]|faz) ${ALVO_PROJETO}\\b`
+  + `|arquitetura d[oe] ${ALVO_PROJETO}`
+  + `|resum(o|e) d?[oe] ${ALVO_PROJETO}`,
+  'i');
+
+// Um ALVO na pergunta a torna específica, mesmo com cara de ampla. "o que faz o replace_scene"
+// e "o que é o VPIN do fluxo de ordem" casavam o regex e recebiam o resumo do projeto — recall
+// zero, e pelo MCP não havia como escapar (o CLI tem --grafo, o ask_graph não tinha nada).
+// Sinais de alvo: snake_case, camelCase, extensão de arquivo, chamada com (), CAIXA_ALTA.
+const TEM_ALVO = /[a-z0-9]_[a-z0-9]|[a-z][A-Z]|\.\w{1,4}\b|\(\)|\b[A-Z]{3,}\b/;
 
 // devolve o resumo cacheado do projeto, ou null (pergunta específica, ou projeto sem resumo)
-export function resumoAmplo(pergunta, nomeProjeto) {
-  if (!AMPLA.test(pergunta)) return null;
+export function resumoAmplo(pergunta, nomeProjeto, forcado = false) {
+  if (!forcado && (!AMPLA.test(pergunta) || TEM_ALVO.test(pergunta))) return null;
   // fileURLToPath e não .pathname: o caminho de instalação pode ter espaço, e o pathname cru
   // devolve %20 (e "/D:/..." no Windows) — o existsSync falharia CALADO e a pergunta ampla
   // voltaria a cair na travessia cara sem ninguém perceber.
@@ -325,7 +349,9 @@ export function formata(res, nomeProjeto) {
 }
 
 // CLI direto (debug)
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || process.argv[1]?.endsWith('retrieval.mjs')) {
+// `?.` nos DOIS lados: importado como lib (node -e "await import(...)") não há argv[1], e a
+// primeira metade estourava TypeError antes da segunda, que já era segura.
+if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('retrieval.mjs')) {
   const [pergunta, grafoPath, raiz] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const semRewrite = process.argv.includes('--sem-rewrite');
   if (!pergunta || !grafoPath) { console.error('Uso: node retrieval.mjs "<pergunta>" <graph.json> [raiz] [--sem-rewrite]'); process.exit(1); }
