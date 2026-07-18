@@ -96,6 +96,26 @@ node harness-recall.mjs
 **Flags:** `--motor=graphify` (A/B vs raw graphify) · `--sem-rewrite` (disable the language bridge) ·
 `--cru` (raw, no re-rank).
 
+## 🔌 As an MCP tool (Claude Desktop, Cursor, Antigravity…)
+
+Instead of the terminal, plug cerebro-engine in as a **native** tool via
+[MCP](https://modelcontextprotocol.io) — the AI then calls it itself, no command to type. It exposes
+two tools: **`ask_graph`** and **`list_projects`**. In `claude_desktop_config.json` (or your client's
+equivalent):
+
+```json
+{
+  "mcpServers": {
+    "cerebro-engine": {
+      "command": "node",
+      "args": ["/absolute/path/to/cerebro-engine/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+Zero dependencies — the MCP protocol is implemented by hand (the project is vanilla by choice).
+
 ## 🔬 How it works
 
 ```mermaid
@@ -127,6 +147,19 @@ flowchart LR
 - **The graph is the index; the file is the truth.** It points; you confirm in code.
 - **If the number looks too good, the method is wrong.** Numbers here are measured, method stated.
 - **Measure before you build.** The embedding arm wasn't built because the data didn't ask for it.
+
+## ⚠️ Scope & honest limits
+
+- **"Local" has an asterisk:** the query-rewrite bridge makes **one call to Gemini** (free tier).
+  Everything else — graph, BFS, RRF — is 100% local. With no internet/key it **warns** and falls back
+  to lexical search (`--sem-rewrite` forces that). Future: a local model (Ollama).
+- **Repo-scale, not giant-monorepo scale:** `graph.json` is loaded fully into memory. Fast for
+  personal/medium repos (hundreds–thousands of nodes); a hundreds-of-MB monorepo would eventually need
+  an on-disk index (SQLite/DuckDB).
+- **The graph can go stale:** this is just the **retriever**. After a big refactor, re-run
+  `graphify update` (the auto-sync layer isn't part of this engine).
+- **Tunable heuristics:** weights are tuned for descriptive names (Python/JS). For Go/C (short names),
+  unlock via env: `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
 
 ## 📄 License
 

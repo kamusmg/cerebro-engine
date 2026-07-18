@@ -34,6 +34,15 @@ const DEPTH = 2;           // profundidade da travessia (graphify fixava em 2; a
 const CAP_NOS = 60;        // teto de nós coletados no BFS
 const MAX_ARQUIVOS = 5;    // corte final por arquivo — fiel ao que o harness mediu
 
+// Pesos das heurísticas estilo-aider. Os defaults foram medidos (recall 20/24) numa base
+// de nome DESCRITIVO (Python/JS/Rust/TS). Em linguagens de nome CURTO idiomático (Go, C),
+// o bônus de "bem-nomeado" quase não dispara — destrave via env, ex.:
+//   CEREBRO_W_BEMNOMEADO=1  CEREBRO_MIN_IDENT=4   (não premiar nome longo)
+const W_GENERICO   = Number(process.env.CEREBRO_W_GENERICO   ?? 0.1); // símbolo genérico/privado/definido em >5 arquivos
+const W_BEMNOMEADO = Number(process.env.CEREBRO_W_BEMNOMEADO ?? 10);  // identificador longo bem-nomeado
+const MIN_IDENT    = Number(process.env.CEREBRO_MIN_IDENT    ?? 8);   // tamanho mínimo pra contar como "bem-nomeado"
+const W_RECENTE    = Number(process.env.CEREBRO_W_RECENTE    ?? 50);  // arquivo mexido no git nos últimos 30 dias
+
 // ---------- utilidades de texto ----------
 const semAcento = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
 const normaliza = (s) => semAcento(String(s).toLowerCase());
@@ -162,9 +171,9 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
 
     // multiplicadores do aider (por nó)
     let mul = 1;
-    if (/^_/.test(n.label) || /^(index|utils?|main|misc|helpers?|const|config|schema)\b/i.test(n.label)) mul *= 0.1;
-    if ((arquivosDoToken.get(idNorm)?.size ?? 0) > 5) mul *= 0.1;      // definido em >5 arquivos = genérico
-    if (/[a-z0-9]_[a-z0-9]|[a-z][A-Z]/.test(n.label) && n.label.length >= 8) mul *= 10; // identificador longo bem-nomeado
+    if (/^_/.test(n.label) || /^(index|utils?|main|misc|helpers?|const|config|schema)\b/i.test(n.label)) mul *= W_GENERICO;
+    if ((arquivosDoToken.get(idNorm)?.size ?? 0) > 5) mul *= W_GENERICO;      // definido em >5 arquivos = genérico
+    if (/[a-z0-9]_[a-z0-9]|[a-z][A-Z]/.test(n.label) && n.label.length >= MIN_IDENT) mul *= W_BEMNOMEADO; // identificador longo bem-nomeado
     // prefer CODE when seeding: data-file nodes (json/txt) match a common term via community_name
     // and drown the real target. Don't exclude docs — just discount when code is competing.
     if (n.file_type && n.file_type !== 'code') mul *= 0.25;
@@ -252,7 +261,7 @@ export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false 
   const scoreArquivo = new Map();
   for (const [id, s] of rrf) {
     const src = G.byId.get(id)?.source_file; if (!src) continue;
-    const boost = recentes.has(path.basename(src)) ? 50 : 1;
+    const boost = recentes.has(path.basename(src)) ? W_RECENTE : 1;
     scoreArquivo.set(src, Math.max(scoreArquivo.get(src) ?? 0, s * boost));
   }
   const topArquivos = new Set([...scoreArquivo.entries()].sort((a, b) => b[1] - a[1])

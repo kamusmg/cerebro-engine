@@ -1,0 +1,20 @@
+{
+  "name": "cerebro-engine",
+  "version": "1.0.0",
+  "description": "Graph-first code retrieval: ask a code graph where X lives instead of reading 30 files. Hybrid seed (lexical + cross-language rewrite + aider hardening) + RRF over graphify. Free, local, measured. MCP-ready.",
+  "type": "module",
+  "bin": {
+    "cerebro-ask": "ask.mjs",
+    "cerebro-mcp": "mcp-server.mjs"
+  },
+  "scripts": {
+    "ask": "node ask.mjs",
+    "mcp": "node mcp-server.mjs",
+    "bench": "node harness-recall.mjs"
+  },
+  "keywords": ["code-search", "code-graph", "rag", "retrieval", "ai-tools", "mcp", "tree-sitter", "llm"],
+  "engines": { "node": ">=22" },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/kamusmg/cerebro-engine" },
+  "author": "kamusmg"
+}

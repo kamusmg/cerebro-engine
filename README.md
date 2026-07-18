@@ -97,6 +97,26 @@ node harness-recall.mjs
 **Flags:** `--motor=graphify` (A/B contra o graphify puro) · `--sem-rewrite` (desliga a ponte de idioma) ·
 `--cru` (bruto, sem re-rank).
 
+## 🔌 Como ferramenta MCP (Claude Desktop, Cursor, Antigravity…)
+
+Em vez de rodar no terminal, plugue o cerebro-engine como ferramenta **nativa** via
+[MCP](https://modelcontextprotocol.io) — aí a IA chama sozinha, sem você digitar comando. Ele
+expõe duas ferramentas: **`ask_graph`** e **`list_projects`**. No `claude_desktop_config.json`
+(ou equivalente do seu cliente):
+
+```json
+{
+  "mcpServers": {
+    "cerebro-engine": {
+      "command": "node",
+      "args": ["/caminho/absoluto/pro/cerebro-engine/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+Zero dependência — o protocolo MCP é implementado à mão (o projeto é vanilla por escolha).
+
 ## 🔬 Como funciona
 
 ```mermaid
@@ -132,6 +152,19 @@ A ponte de idioma é o pulo do gato: você pergunta *"onde mantém a **pontuaç�
 - **O grafo é o índice; o arquivo é a verdade.** Ele aponta; você confirma no código.
 - **Se o número parece bom demais, o método está errado.** Aqui os números são medidos e o método vem junto.
 - **Medir antes de construir.** O braço de embeddings não foi feito porque o dado não pediu.
+
+## ⚠️ Escopo e limites (honestos)
+
+- **"Local" tem um asterisco:** a ponte de tradução da pergunta (rewrite) faz **1 chamada ao Gemini**
+  (free tier). O resto — grafo, BFS, RRF — é 100% local. Sem internet/chave, ele **avisa** e cai pra
+  busca léxica (`--sem-rewrite` força isso). Futuro: modelo local (Ollama).
+- **Escala de REPO, não de monorepo gigante:** o `graph.json` é carregado inteiro na memória. Pra
+  repos pessoais/médios (centenas–milhares de nós) voa; um monorepo de centenas de MB um dia pediria
+  índice em disco (SQLite/DuckDB).
+- **O grafo pode ficar velho:** este é só o **buscador**. Depois de um refactor grande, rode
+  `graphify update` de novo (a camada de auto-sync não faz parte deste engine).
+- **Heurísticas ajustáveis:** os pesos são afinados pra nomes descritivos (Python/JS). Em Go/C (nome
+  curto), destrave via env: `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
 
 ## 📄 Licença
 
