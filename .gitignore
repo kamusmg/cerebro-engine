@@ -1,0 +1,10 @@
+node_modules/
+
+# your own project list — copy projects.example.json and fill it in
+projects.json
+
+# ephemeral local caches / artifacts
+.rewrite-cache.json
+graphify-out/
+reports/golden-questions.json
+reports/recall.md

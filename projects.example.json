@@ -1,0 +1,4 @@
+[
+  { "name": "my-backend", "root": "/absolute/path/to/my-backend" },
+  { "name": "my-frontend", "root": "/absolute/path/to/my-frontend" }
+]
