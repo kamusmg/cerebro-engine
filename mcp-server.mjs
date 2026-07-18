@@ -41,6 +41,11 @@ const TOOLS = [
       properties: {
         question: { type: 'string', description: 'Natural-language question, e.g. "where is the auth token validated".' },
         project: { type: 'string', description: 'Project name (call list_projects to see the options).' },
+        mode: {
+          type: 'string',
+          enum: ['auto', 'graph', 'summary'],
+          description: 'auto (default): project-wide questions get the cached summary, everything else traverses the graph. graph: always traverse (use when auto gave you a summary but you wanted specific files). summary: force the project summary.',
+        },
       },
       required: ['question', 'project'],
     },
@@ -58,16 +63,19 @@ async function chamaFerramenta(name, args) {
     return com.length ? `Projects with a graph:\n${com.join('\n')}` : 'No project has a graph yet. Run `graphify update <path>` and add it to projects.json.';
   }
   if (name === 'ask_graph') {
-    const { question, project } = args ?? {};
+    const { question, project, mode = 'auto' } = args ?? {};
     if (!question || !project) throw new Error('both "question" and "project" are required');
     const p = acha(project);
     if (!p) throw new Error(`project "${project}" not found — call list_projects`);
     const grafo = grafoDe(p);
     if (!existsSync(grafo)) throw new Error(`${p.name} has no graph yet — run: graphify update "${p.root}"`);
-    // mesmo portão do CLI: pergunta ampla ("how does it work") é servida pelo resumo hierárquico
-    // cacheado, não por travessia — BFS em pergunta arquitetural devolve ruído e queima tokens.
-    const resumo = resumoAmplo(question, p.name);
-    if (resumo) return resumo;
+    // mesmo portão do CLI (o `mode` é o equivalente do --grafo: sem ele, uma IA que caísse no
+    // resumo sem querer não tinha como pedir a travessia).
+    if (mode !== 'graph') {
+      const resumo = resumoAmplo(question, p.name, mode === 'summary');
+      if (resumo) return resumo;
+      if (mode === 'summary') throw new Error(`${p.name} has no cached summary yet — use mode "graph"`);
+    }
     const res = await consultar({ grafoPath: grafo, raiz: p.root, pergunta: question });
     return `${formata(res, p.name)}\n[graph of ${p.name} — the file is the truth, confirm before editing]`;
   }
