@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-// ask.mjs — pergunta ao grafo de QUALQUER projeto, de qualquer pasta.
+// ask.mjs — ask the code graph of ANY project, from any folder.
 //
-// Por que existe: a sessão do Claude Code abre em C:\Users\samue (a home), e o
-// `graphify query` procura graphify-out/ a partir do cwd. Da home ele nunca acha nada —
-// o reflexo do CLAUDE.md morria calado e o modelo caía no Read/Grep (medido: uma sessão
-// com 543 Reads e ZERO queries). Aqui a raiz do projeto sai do projects.json e o grafo
-// vai explícito no --graph.
+// Why it exists: your agent's session may open anywhere, and `graphify query` looks for
+// graphify-out/ relative to the cwd. From the wrong folder it finds nothing and fails
+// silently — the agent falls back to reading dozens of files. Here the project root comes
+// from projects.json and the graph path is passed explicitly via --graph.
 //
-// MOTOR (18/07): por padrão usa o retrieval PRÓPRIO (retrieval.mjs) — seed híbrido
-// (léxico + rewrite PT→EN via Gemini free + endurecimento aider) + BFS próprio + fusão RRF.
-// Medido: recall 5/8→8/8 no gabarito (o teto quebrou). Detalhe em reports/recall.md.
-// O caminho antigo (graphify query + re-rank aider) continua em `--motor=graphify` pra A/B.
+// ENGINE: by default uses the OWN retrieval layer (retrieval.mjs) — hybrid seed selection
+// (lexical + cross-language query-rewrite via Gemini free tier + aider-style hardening) +
+// own BFS + Reciprocal Rank Fusion. Measured: recall 15/24 -> 20/24 on the author's golden
+// set. The old path (graphify query + aider re-rank) stays under `--motor=graphify` for A/B.
 //
-// Uso: node ask.mjs "<pergunta>" <projeto> [--motor=graphify] [--sem-rewrite] [--cru]
-//      node ask.mjs --lista
+// Usage: node ask.mjs "<question>" <project> [--motor=graphify] [--sem-rewrite] [--cru]
+//        node ask.mjs --lista
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, basename } from 'node:path';
