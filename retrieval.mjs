@@ -117,11 +117,13 @@ function carregaGrafo(grafoPath) {
   const refCount = new Map();     // grau do nó → damping do aider (sqrt)
   const rationaleDe = new Map();  // símbolo → prosa das docstrings/comentários ligadas
   const arquivosDoToken = new Map(); // identificador → conjunto de arquivos que o definem
+  const relEntre = new Map();     // "src\0tgt" → relação (direção original) — evita varrer todas as arestas no formata
 
   const liga = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
   for (const l of links) {
     const s = l.source, t = l.target;
     liga(s, t); liga(t, s);
+    relEntre.set(`${s}\0${t}`, l.relation);
     refCount.set(s, (refCount.get(s) ?? 0) + 1);
     refCount.set(t, (refCount.get(t) ?? 0) + 1);
     // rationale_for: o nó-fonte é a prosa (docstring/comentário), o alvo é o símbolo
@@ -137,7 +139,7 @@ function carregaGrafo(grafoPath) {
     if (!arquivosDoToken.has(id)) arquivosDoToken.set(id, new Set());
     arquivosDoToken.get(id).add(n.source_file);
   }
-  return { g, nodes, byId, adj, refCount, rationaleDe, arquivosDoToken };
+  return { g, nodes, byId, adj, refCount, rationaleDe, arquivosDoToken, relEntre };
 }
 
 // texto onde um nó é "buscável": rótulo + caminho + comunidade + prosa das docstrings ligadas
@@ -247,11 +249,15 @@ export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false 
     rrf.set(id, s);
   }
 
-  // corte por ARQUIVO (top-5) + reforço de recência do git (x50), fiel ao reRankeia atual
+  // corte por ARQUIVO (top-5) + reforço de recência do git (x50).
+  // Recência por CAMINHO COMPLETO, não basename: casar só "utils.py" daria o bônus ×50 a TODO
+  // utils.py/index.js/__init__.py do repo (Next/Django) e coroaria o arquivo errado. git e o
+  // source_file do graphify são ambos relativos à raiz — normaliza a barra e casa exato.
+  const norm = (p) => p.replace(/\\/g, '/').replace(/^\.\//, '');
   let recentes = new Set();
   try {
     recentes = new Set(execFileSync('git', ['-C', raiz, 'log', '--since=30.days', '--name-only', '--format='],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').filter(Boolean).map((f) => path.basename(f.trim())));
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').filter(Boolean).map((f) => norm(f.trim())));
   } catch { /* sem git = sem recência */ }
 
   // Recência do git (x50) entra SÓ na escolha do arquivo, não no sort dos nós — medido em
@@ -261,7 +267,7 @@ export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false 
   const scoreArquivo = new Map();
   for (const [id, s] of rrf) {
     const src = G.byId.get(id)?.source_file; if (!src) continue;
-    const boost = recentes.has(path.basename(src)) ? W_RECENTE : 1;
+    const boost = recentes.has(norm(src)) ? W_RECENTE : 1;
     scoreArquivo.set(src, Math.max(scoreArquivo.get(src) ?? 0, s * boost));
   }
   const topArquivos = new Set([...scoreArquivo.entries()].sort((a, b) => b[1] - a[1])
@@ -283,11 +289,17 @@ export function formata(res, nomeProjeto) {
   for (const n of escolhidos) {
     linhas.push(`NODE ${n.label} [src=${n.source_file} loc=${n.source_location ?? '?'} community=${n.community ?? '?'}]`);
   }
+  // arestas entre os nós escolhidos (≤~50) via adjacência — NÃO varrer todas as arestas do grafo
+  // (era O(|E|) por consulta; num grafo grande, loop gigante só pra desenhar setas). relEntre só
+  // tem a direção original, então cada aresta sai uma vez, sem duplicar o reverso.
   const ids = new Set(escolhidos.map((n) => n.id));
-  for (const l of G.g.links ?? []) {
-    if (ids.has(l.source) && ids.has(l.target)) {
-      const a = G.byId.get(l.source)?.label, b = G.byId.get(l.target)?.label;
-      if (a && b) linhas.push(`EDGE ${a} --${l.relation}--> ${b}`);
+  for (const a of ids) {
+    for (const b of G.adj.get(a) ?? []) {
+      if (!ids.has(b)) continue;
+      const rel = G.relEntre.get(`${a}\0${b}`);
+      if (!rel) continue;
+      const la = G.byId.get(a)?.label, lb = G.byId.get(b)?.label;
+      if (la && lb) linhas.push(`EDGE ${la} --${rel}--> ${lb}`);
     }
   }
   if (totalArquivos > MAX_ARQUIVOS) linhas.push('', `[motor próprio: RRF léxico+rewrite+grafo · ${totalArquivos}→${MAX_ARQUIVOS} arquivos]`);

@@ -85,6 +85,7 @@ async function trata(msg) {
     });
   }
   if (method?.startsWith('notifications/')) return;          // notificação: sem resposta
+  if (method === 'ping') return ok(id, {});                   // keep-alive do cliente (Claude Desktop) — responder senão ele reinicia o server
   if (method === 'tools/list') return ok(id, { tools: TOOLS });
   if (method === 'tools/call') {
     try {
@@ -109,7 +110,12 @@ process.stdin.on('data', (chunk) => {
     if (!linha) continue;
     let msg;
     try { msg = JSON.parse(linha); } catch { log('JSON-RPC inválido, ignorado:', linha.slice(0, 80)); continue; }
-    const pr = Promise.resolve(trata(msg)).catch((e) => log('erro no handler:', e.message));
+    // Se o handler explodir ANTES de responder, devolve fail(id) — senão o cliente (Claude/Cursor)
+    // fica com o spinner eterno "calling ask_graph" esperando um id que nunca volta.
+    const pr = Promise.resolve(trata(msg)).catch((e) => {
+      log('erro no handler:', e.message);
+      if (msg.id !== undefined && msg.id !== null) fail(msg.id, -32603, `internal error: ${e.message}`);
+    });
     pendentes.add(pr);
     pr.finally(() => pendentes.delete(pr));
   }
