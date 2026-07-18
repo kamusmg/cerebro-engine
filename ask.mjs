@@ -1,23 +1,24 @@
 #!/usr/bin/env node
-// ask.mjs — ask the code graph of ANY project, from any folder.
+// ask.mjs — pergunta ao grafo de QUALQUER projeto, de qualquer pasta.
 //
-// Why it exists: your agent's session may open anywhere, and `graphify query` looks for
-// graphify-out/ relative to the cwd. From the wrong folder it finds nothing and fails
-// silently — the agent falls back to reading dozens of files. Here the project root comes
-// from projects.json and the graph path is passed explicitly via --graph.
+// Por que existe: a sessão do Claude Code abre em C:\Users\<usuario> (a home), e o
+// `graphify query` procura graphify-out/ a partir do cwd. Da home ele nunca acha nada —
+// o reflexo do CLAUDE.md morria calado e o modelo caía no Read/Grep (medido: uma sessão
+// com 543 Reads e ZERO queries). Aqui a raiz do projeto sai do projects.json e o grafo
+// vai explícito no --graph.
 //
-// ENGINE: by default uses the OWN retrieval layer (retrieval.mjs) — hybrid seed selection
-// (lexical + cross-language query-rewrite via Gemini free tier + aider-style hardening) +
-// own BFS + Reciprocal Rank Fusion. Measured: recall 15/24 -> 20/24 on the author's golden
-// set. The old path (graphify query + aider re-rank) stays under `--motor=graphify` for A/B.
+// MOTOR (18/07): por padrão usa o retrieval PRÓPRIO (retrieval.mjs) — seed híbrido
+// (léxico + rewrite PT→EN via Gemini free + endurecimento aider) + BFS próprio + fusão RRF.
+// Medido: recall 5/8→8/8 no gabarito (o teto quebrou). Detalhe em reports/recall.md.
+// O caminho antigo (graphify query + re-rank aider) continua em `--motor=graphify` pra A/B.
 //
-// Usage: node ask.mjs "<question>" <project> [--motor=graphify] [--sem-rewrite] [--cru]
-//        node ask.mjs --lista
+// Uso: node ask.mjs "<pergunta>" <projeto> [--motor=graphify] [--sem-rewrite] [--cru]
+//      node ask.mjs --lista
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { consultar, formata } from './retrieval.mjs';
+import { consultar, formata, resumoAmplo } from './retrieval.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const projetos = JSON.parse(readFileSync(join(ROOT, 'projects.json'), 'utf8'));
@@ -54,12 +55,11 @@ if (!existsSync(grafo)) {
 // e cara que respondia mal — travessia serve pergunta ESPECÍFICA. Pra ampla existe o
 // resumo hierárquico (nível GraphRAG, resumo-projetos.mjs): serve ele e para. O grafo
 // continua uma pergunta específica de distância; --grafo força a travessia mesmo assim.
-const AMPLA = /como (o projeto |esse projeto |ele |isso )?(funciona|trabalha)|vis[aã]o geral|o que (é|faz) (o|esse|este)|arquitetura d|overview|resum(o|e) (o|do|desse)/i;
-if (AMPLA.test(pergunta) && !resto.includes('--grafo')) {
-  const resumoF = join(ROOT, 'resumos', `${achado.name}.md`);
-  if (existsSync(resumoF)) {
-    console.log(readFileSync(resumoF, 'utf8'));
-    console.log(`[resumo cacheado de ${achado.name} — pra detalhe, faça uma pergunta específica ao grafo ou repita com --grafo]`);
+// (o portão mora no retrieval.mjs, compartilhado com o mcp-server.mjs)
+if (!resto.includes('--grafo')) {
+  const resumo = resumoAmplo(pergunta, achado.name);
+  if (resumo) {
+    console.log(`${resumo} (ou repita com --grafo)`);
     process.exit(0);
   }
 }

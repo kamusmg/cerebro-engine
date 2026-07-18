@@ -13,7 +13,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { consultar, formata } from './retrieval.mjs';
+import { consultar, formata, resumoAmplo } from './retrieval.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const log = (...m) => process.stderr.write(m.join(' ') + '\n'); // NUNCA stdout
@@ -64,6 +64,10 @@ async function chamaFerramenta(name, args) {
     if (!p) throw new Error(`project "${project}" not found — call list_projects`);
     const grafo = grafoDe(p);
     if (!existsSync(grafo)) throw new Error(`${p.name} has no graph yet — run: graphify update "${p.root}"`);
+    // mesmo portão do CLI: pergunta ampla ("how does it work") é servida pelo resumo hierárquico
+    // cacheado, não por travessia — BFS em pergunta arquitetural devolve ruído e queima tokens.
+    const resumo = resumoAmplo(question, p.name);
+    if (resumo) return resumo;
     const res = await consultar({ grafoPath: grafo, raiz: p.root, pergunta: question });
     return `${formata(res, p.name)}\n[graph of ${p.name} — the file is the truth, confirm before editing]`;
   }
@@ -109,7 +113,13 @@ process.stdin.on('data', (chunk) => {
     buffer = buffer.slice(nl + 1);
     if (!linha) continue;
     let msg;
-    try { msg = JSON.parse(linha); } catch { log('JSON-RPC inválido, ignorado:', linha.slice(0, 80)); continue; }
+    // a spec do JSON-RPC 2.0 EXIGE responder -32700 com id:null quando o parse falha — engolir
+    // calado deixaria o cliente sem sinal se o buffer se deformasse no meio do stream.
+    try { msg = JSON.parse(linha); } catch {
+      log('JSON-RPC inválido:', linha.slice(0, 80));
+      fail(null, -32700, 'Parse error');
+      continue;
+    }
     // Se o handler explodir ANTES de responder, devolve fail(id) — senão o cliente (Claude/Cursor)
     // fica com o spinner eterno "calling ask_graph" esperando um id que nunca volta.
     const pr = Promise.resolve(trata(msg)).catch((e) => {
