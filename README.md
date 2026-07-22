@@ -61,15 +61,45 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 
 *(saída ilustrativa; o formato é esse)*
 
-## 📊 Medido (gabarito de 24 perguntas do autor, gabarito verificado por grep)
+## 📊 Medido — em DOIS gabaritos, um deles held-out
 
 | recuperador | recall | hit@3 | MRR |
 |---|:---:|:---:|:---:|
 | BFS do grafo (linha de base) | 15/24 | 14/24 | 0.529 |
-| **este (híbrido + rewrite + RRF)** | **20/24** | **19/24** | **0.653** |
+| híbrido + rewrite + RRF | 20/24 | **19/24** | 0.653 |
+| **+ BM25 com casamento por prefixo** | **20/24** | 18/24 | **0.693** |
 
 As 4 furadas restantes são **cobertura** (símbolos Arduino/`.ino` que o parser não extrai), **não** recall.
 Nos alvos que existem no grafo: **20/20**. Reproduza com `node harness-recall.mjs`.
+
+### O gabarito de treino não basta — e a prova disso
+
+As 24 perguntas acima são **treino**: elas e os ajustes que elas justificam nasceram juntos. Por isso
+existe um segundo gabarito, **construído ao contrário de propósito** — o alvo é sorteado
+mecanicamente (semente fixa) entre nós com docstring, e só **depois** a pergunta é escrita a partir
+do que a função faz. Ele nunca foi usado pra ajustar nada.
+
+**Ele reprovou a primeira versão desta melhoria.** BM25 clássico com token exato parecia ótimo no
+treino (recall 20→**21**, MRR 0.653→**0.733** com `k1` afinado) e desabou no held-out (recall
+**11/14** contra 12/14 do código antigo), com o `k1` afinado rendendo resultado **idêntico** ao
+default — a afinação comprou zero.
+
+A causa: o casamento por substring que a "correção" eliminou funcionava como um **radicalizador
+cross-lingual acidental**. Quando a pergunta vem num idioma e os identificadores são ingleses, a
+palavra da pergunta é com frequência **prefixo** do cognato (`portugues` ⊂ `portuguese`). Daí o
+desenho final: BM25 com `k1`/`b` nos **defaults da literatura** e casamento **por prefixo**.
+
+| | treino (24) | held-out (14) | nós/pergunta |
+|---|---|---|---|
+| substring (anterior) | MRR 0.653 | recall 12 · MRR 0.721 | 36.4 |
+| BM25 token exato | MRR 0.691 | recall **11** · MRR 0.693 | 34.6 |
+| **prefixo + BM25 (padrão)** | MRR **0.693** | recall 12 · MRR **0.764** | **34.6** |
+
+A/B a qualquer momento: `CEREBRO_LEXICO=legado|bm25|prefixo`.
+
+> **Se você for medir seu próprio retriever, roube isto e não o número:** um gabarito onde você
+> ajustou parâmetros não mede mais o motor, mede o gabarito. Construa o segundo ao contrário
+> (alvo primeiro, por sorteio; pergunta depois) e rode-o **uma vez por mudança**.
 
 ## 🚀 Instalação
 
