@@ -134,13 +134,29 @@ already work. The engine is very good there. In the regime that would justify a 
   summing `1/(1+d)` across seeds: it regressed both sets and cost +51% tokens, most likely because it
   rewards hub nodes — exactly what the `sqrt(refs)` damping exists to prevent. If that's your first
   idea, it was ours too, and it didn't work.)*
-- **G3 has no sample to conclude anything from** (n=1 on each side), and claiming otherwise would be
-  making things up.
+- **G3 was later measured on a third set — and the result runs against this project's bet:** **1/3**.
+  Add **0/1** on G2 plus the earlier 0/2, and three independent sets tell the same story: excellent
+  on G1, weak exactly where the graph was supposed to be the only answer.
+
+### And the "G3" set wasn't G3 — a warning for anyone repeating this
+
+Those 12 questions were mined from the graph by looking for pairs (A→T) joined by an edge and
+sharing **no tokens at all**, expecting that to yield hidden dependencies. The classifier disagreed:
+**8 of the 12 are G1.** The mining hit its target 3 times out of 12.
+
+The failure is instructive: A and T not sharing vocabulary **does not imply** that the *question*
+doesn't share vocabulary with T. The question is written by a human describing the consumer, and it
+smuggles the target's vocabulary back in by another route. **If you build a G3 set, classify the
+final question — not the node pair.** Otherwise you measure G1 while believing you measure G3.
 
 > **The honest reading:** what's demonstrated here is **token economy** — the same answer from a
-> fraction of the context. **Superiority over `grep` is not demonstrated**, because the golden set is
-> mostly the kind of question `grep` gets right. If you publish numbers for your retriever, publish
-> the **composition** alongside them: without it, "MRR 0.76" can mean very different things.
+> fraction of the context, and that held up in every measurement (6.2x, 20/24 hit rate). **Superiority
+> over `grep` is not merely undemonstrated: the little evidence that exists points against it.** The
+> G2/G3 samples are small and settle nothing on their own, but they are the only ones there are, and
+> hiding them behind a pretty aggregate would be dishonest.
+>
+> If you publish numbers for your retriever, publish the **composition** alongside them: without it,
+> "MRR 0.76" can mean very different things.
 
 ## 🚀 Install
 

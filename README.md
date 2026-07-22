@@ -135,12 +135,29 @@ funcionaria. O motor é muito bom nele. No regime que justificaria um grafo exis
   desempatar por convergência, somando `1/(1+d)` sobre cada seed: piorou os dois gabaritos e custou
   +51% de token. Provavelmente porque premia o nó-hub, que é justamente o que o damping `sqrt(refs)`
   existe pra conter. Se essa for sua primeira ideia — foi a nossa, e não funcionou.)*
-- **Sobre G3 não há amostra pra concluir nada** (n=1 de cada lado), e dizer o contrário seria inventar.
+- **G3 foi medido depois, num terceiro conjunto — e o resultado é contra a aposta deste projeto:**
+  **1/3**. Some com **0/1** no G2 e com os 0/2 anteriores, e três conjuntos independentes contam a
+  mesma história: ótimo no G1, fraco onde o grafo deveria ser a única resposta.
+
+### E o conjunto "G3" nem era G3 — o que é um aviso pra quem for repetir isto
+
+As 12 perguntas do terceiro conjunto foram mineradas do grafo procurando pares (A→T) ligados por
+aresta e **sem nenhum token em comum**, na expectativa de produzir dependência escondida. O
+classificador discordou: **8 das 12 são G1.** A mineração acertou o alvo em 3 de 12.
+
+A falha é instrutiva: A e T não compartilharem vocabulário **não implica** que a *pergunta* não
+compartilhe com T. A pergunta é escrita por uma pessoa descrevendo o consumidor, e ela reintroduz o
+vocabulário do alvo por outro caminho. **Se você for construir um conjunto G3, classifique a pergunta
+final — não o par de nós.** Caso contrário você mede G1 achando que mede G3.
 
 > **A leitura honesta:** o que está demonstrado aqui é **economia de token** — a mesma resposta com
-> uma fração do contexto. **Superioridade sobre `grep` não está demonstrada**, porque o gabarito é
-> majoritariamente do tipo que o `grep` acerta. Se você publicar números do seu retriever, publique a
-> **composição** junto: sem ela, "MRR 0.76" pode significar coisas muito diferentes.
+> uma fração do contexto, e isso se sustentou em toda medição (6.2x, acerto 20/24). **Superioridade
+> sobre `grep` não só não está demonstrada: a pouca evidência que existe aponta contra.** As amostras
+> de G2/G3 são pequenas e não decidem nada sozinhas, mas são as únicas que existem, e seria desonesto
+> escondê-las atrás de um número agregado bonito.
+>
+> Se você publicar números do seu retriever, publique a **composição** junto: sem ela, "MRR 0.76"
+> pode significar coisas muito diferentes.
 
 ## 🚀 Instalação
 
