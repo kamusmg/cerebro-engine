@@ -60,15 +60,87 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 
 *(illustrative output; the format is real)*
 
-## 📊 Measured (author's 24-question golden set, ground truth verified by grep)
+## 📊 Measured — on TWO golden sets, one of them held out
 
 | retriever | recall | hit@3 | MRR |
 |---|:---:|:---:|:---:|
 | graph BFS (baseline) | 15/24 | 14/24 | 0.529 |
-| **this (hybrid + rewrite + RRF)** | **20/24** | **19/24** | **0.653** |
+| hybrid + rewrite + RRF | 20/24 | **19/24** | 0.653 |
+| **+ BM25 with prefix matching** | **20/24** | 18/24 | **0.693** |
 
 The 4 residual misses are **coverage** (Arduino/`.ino` symbols the parser doesn't extract), **not**
 retrieval. On targets that exist in the graph: **20/20**. Reproduce with `node harness-recall.mjs`.
+
+> ⚠️ **Don't read this table without the composition of the golden set.** Most of these questions
+> fall in the regime where plain text search would already work, which inflates any aggregate number.
+> See [what these numbers do **not** prove](#-what-these-numbers-do-not-prove) before comparing
+> against your own.
+
+### The training set isn't enough — and here's the proof
+
+The 24 questions above are **training**: they and the tuning they justify were born together. So there
+is a second set, **built backwards on purpose** — the target is sampled mechanically (fixed seed)
+among documented nodes, and only **then** is the question written from what that code does. It has
+never been used to tune anything.
+
+**It rejected the first version of this very improvement.** Textbook BM25 with exact-token matching
+looked great on training (recall 20→**21**, MRR 0.653→**0.733** with a tuned `k1`) and collapsed on
+the held-out set (recall **11/14** vs 12/14 for the older code), with the tuned `k1` scoring
+*identically* to the default — the tuning bought nothing.
+
+The cause: the substring matching that the "fix" removed was working as an **accidental cross-lingual
+stemmer**. When questions are written in one language and identifiers are English, the question's word
+is often a **prefix** of its English cognate (`portugues` ⊂ `portuguese`). Hence the final design:
+BM25 with literature-default `k1`/`b`, and **prefix** matching.
+
+| | training (24) | held-out (14) | nodes/question |
+|---|---|---|---|
+| substring (previous) | MRR 0.653 | recall 12 · MRR 0.721 | 36.4 |
+| BM25 exact token | MRR 0.691 | recall **11** · MRR 0.693 | 34.6 |
+| **prefix + BM25 (default)** | MRR **0.693** | recall 12 · MRR **0.764** | **34.6** |
+
+A/B at any time: `CEREBRO_LEXICO=legado|bm25|prefixo`.
+
+> **If you benchmark your own retriever, steal this and not the number:** a golden set you tuned
+> against no longer measures the engine, it measures the set. Build the second one backwards (target
+> first, by sampling; question afterwards) and run it **once per change**.
+
+## ⚖️ What these numbers do **not** prove
+
+An aggregate number hides **what kind** of questions were asked. Following
+[CodeCompass](https://arxiv.org/abs/2602.20048), which evaluates code retrieval across three regimes,
+every question is classified **mechanically** — the graph decides, not the author:
+
+| | the target is… | what would already find it |
+|---|---|---|
+| **G1** | named by a term in the question itself | `grep` |
+| **G2** | ≤2 hops from something the question names | traversal — **this is where a graph should pay off** |
+| **G3** | neither named nor reachable by short traversal | only a semantic index |
+
+And the result is uncomfortable:
+
+| | composition | G1 | G2 | G3 |
+|---|---|---|---|---|
+| training (24) | 71% G1 | 16/17 · MRR **0.843** | 2/2 · hit@3 **0/2** | 2/5 |
+| held-out (14) | **86% G1** | 12/12 · MRR **0.892** | n=1 | n=1 |
+
+**In other words: `MRR 0.764` is effectively the G1 number** — the regime where keyword search would
+already work. The engine is very good there. In the regime that would justify a graph existing, it is
+**unproven**, for two different reasons:
+
+- **G2 is a RANKING defect, not a retrieval one.** Recall 2/2, hit@3 **0/2**: the engine **finds the
+  target and buries it**. The cause is known — graph distance only takes 3 values, so dozens of nodes
+  tie and the tie-break ends up being BFS insertion order. *(We tried breaking ties by convergence,
+  summing `1/(1+d)` across seeds: it regressed both sets and cost +51% tokens, most likely because it
+  rewards hub nodes — exactly what the `sqrt(refs)` damping exists to prevent. If that's your first
+  idea, it was ours too, and it didn't work.)*
+- **G3 has no sample to conclude anything from** (n=1 on each side), and claiming otherwise would be
+  making things up.
+
+> **The honest reading:** what's demonstrated here is **token economy** — the same answer from a
+> fraction of the context. **Superiority over `grep` is not demonstrated**, because the golden set is
+> mostly the kind of question `grep` gets right. If you publish numbers for your retriever, publish
+> the **composition** alongside them: without it, "MRR 0.76" can mean very different things.
 
 ## 🚀 Install
 
