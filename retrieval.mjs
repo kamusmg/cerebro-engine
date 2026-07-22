@@ -148,6 +148,44 @@ function carregaGrafo(grafoPath) {
 }
 
 // texto onde um nó é "buscável": rótulo + caminho + comunidade + prosa das docstrings ligadas
+// ---------- BM25 com casamento por prefixo (o braço léxico) ----------
+// A versão anterior casava com `tx.includes(w)` — substring, não palavra. Na teoria de
+// recuperação de informação isso é defeito: `som` casa `awesome`, `ler` casa `compiler`.
+// Trocamos por BM25 clássico (k1/b) com o documento tokenizado igual à pergunta.
+//
+// MAS a medição num gabarito HELD-OUT reprovou o BM25 estrito: ele perdia perguntas em que a
+// palavra da pergunta é PREFIXO do identificador em inglês. Numa base onde o usuário pergunta
+// num idioma e o código é nomeado em inglês, o substring funcionava como um radicalizador
+// cross-lingual acidental (ex.: o termo `portugues` casando dentro de `portuguese`).
+//
+// O meio-termo é o padrão: BM25 + casamento por PREFIXO com piso de MIN_PREFIXO caracteres.
+// Mantém o ganho cross-lingual e mata o custo real do substring (o casamento fica ancorado no
+// INÍCIO do token, então `som` deixa de casar `awesome`).
+//   • saturação (k1): a 5ª ocorrência de um termo vale menos que a 1ª
+//   • normalização por tamanho (b): nó com docstring longa tem mais superfície pra casar
+//     qualquer termo. Medido: o nó do p95 tem ~3x o texto da mediana e não pagava nada.
+const BM25_K1 = Number(process.env.CEREBRO_BM25_K1 ?? 1.2);
+const BM25_B  = Number(process.env.CEREBRO_BM25_B  ?? 0.75);
+const MIN_PREFIXO = Number(process.env.CEREBRO_MIN_PREFIXO ?? 4);
+// 'prefixo' (padrão) · 'bm25' (token exato, MEDIDO PIOR) · 'legado' (o includes() original)
+const LEXICO = process.env.CEREBRO_LEXICO ?? 'prefixo';
+const LEXICO_LEGADO = LEXICO === 'legado';
+
+// Plural é a mesma palavra pro nosso fim. Sem isto a tokenização estrita perde match que o
+// includes() acertava.
+const raiz = (w) => (w.length >= 4 && w.endsWith('s') ? w.slice(0, -1) : w);
+const casaPrefixo = (termo, tokenDoc) => tokenDoc === termo
+  || (termo.length >= MIN_PREFIXO && tokenDoc.startsWith(termo));
+
+function partesBusca(n, rationaleDe) {
+  return [n.label, n.norm_label, n.source_file ? path.basename(n.source_file) : '',
+    n.community_name ?? '', ...(rationaleDe.get(n.id) ?? [])].filter(Boolean).join(' ');
+}
+// CRU (com maiúsculas) e NORMALIZADO são coisas diferentes, e a ordem importa: o split de
+// camelCase precisa da maiúscula, então quem tokeniza recebe o texto CRU. Chamar tokens() em
+// cima do normalizado destrói o sinal antes de usá-lo — erro medido: `SomeConcatMode` chegava
+// como o blob `someconcatmode`, o termo `some` deixava de casar, e o recall caía. É o mesmo
+// bug de ordem já anotado dentro da própria tokens(), cometido de novo do outro lado.
 function textoBusca(n, rationaleDe) {
   const partes = [n.label, n.norm_label, n.source_file ? path.basename(n.source_file) : '',
     n.community_name ?? '', ...(rationaleDe.get(n.id) ?? [])];
@@ -157,18 +195,52 @@ function textoBusca(n, rationaleDe) {
 // ---------- pontuação de seed, com o endurecimento do aider ----------
 function pontuaSeeds(G, termosPergunta, termosRewrite) {
   const { nodes, refCount, rationaleDe, arquivosDoToken } = G;
-  // IDF barato: termo que casa em MUITOS nós vale menos ("legenda") — mata a dominância (a)
+  // IDF barato: termo que casa em MUITOS nós vale menos — mata a dominância (a)
   const docFreq = new Map();
-  const textos = new Map();
+  const textos = new Map();   // legado: blob minúsculo
+  const tf = new Map();       // bm25: id → Map(termo da pergunta → frequência)
+  const tamDoc = new Map();   // bm25: id → nº de tokens
+  let somaTam = 0;
+
+  const termosTodos = new Set([...termosPergunta, ...termosRewrite].map(raiz));
+
   for (const n of nodes) {
     const tx = textoBusca(n, rationaleDe);
     textos.set(n.id, tx);
-    const vistos = new Set();
-    for (const w of new Set([...termosPergunta, ...termosRewrite])) {
-      if (!vistos.has(w) && tx.includes(w)) { docFreq.set(w, (docFreq.get(w) ?? 0) + 1); vistos.add(w); }
+
+    if (LEXICO_LEGADO) {
+      const vistos = new Set();
+      for (const w of new Set([...termosPergunta, ...termosRewrite])) {
+        if (!vistos.has(w) && tx.includes(w)) { docFreq.set(w, (docFreq.get(w) ?? 0) + 1); vistos.add(w); }
+      }
+      continue;
     }
+
+    // Tokeniza o DOCUMENTO com a mesma regra da pergunta, a partir do texto CRU.
+    const toks = tokens(partesBusca(n, rationaleDe)).map(raiz);
+    tamDoc.set(n.id, toks.length || 1);
+    somaTam += toks.length || 1;
+    // cont é indexado pelo TERMO DA PERGUNTA (não pelo token do doc): no modo prefixo vários
+    // tokens diferentes do documento podem satisfazer o mesmo termo.
+    const cont = new Map();
+    for (const t of toks) {
+      for (const termo of termosTodos) {
+        if (LEXICO === 'prefixo' ? casaPrefixo(termo, t) : t === termo) {
+          cont.set(termo, (cont.get(termo) ?? 0) + 1);
+        }
+      }
+    }
+    tf.set(n.id, cont);
+    for (const t of cont.keys()) docFreq.set(t, (docFreq.get(t) ?? 0) + 1);
   }
   const N = nodes.length || 1;
+  const tamMedio = somaTam / N || 1;
+  // IDF do BM25 (Robertson). O +1 dentro do log impede idf negativo pra termo que aparece em
+  // mais da metade do corpus.
+  const idfBM = (w) => {
+    const df = docFreq.get(w) ?? 0;
+    return Math.log((N - df + 0.5) / (df + 0.5) + 1);
+  };
   const idf = (w) => Math.log((N + 1) / ((docFreq.get(w) ?? 0) + 1)) + 1;
 
   const scoreLex = new Map(), scoreRw = new Map();
@@ -189,7 +261,19 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
 
     const acumula = (mapa, termos) => {
       let s = 0;
-      for (const w of termos) if (tx.includes(w)) s += idf(w);
+      if (LEXICO_LEGADO) {
+        for (const w of termos) if (tx.includes(w)) s += idf(w);
+      } else {
+        const cont = tf.get(n.id);
+        const dl = tamDoc.get(n.id) ?? 1;
+        for (const w0 of termos) {
+          const w = raiz(w0);
+          const f = cont.get(w) ?? 0;
+          if (!f) continue;
+          // BM25: saturação por k1 + normalização por tamanho por b
+          s += idfBM(w) * (f * (BM25_K1 + 1)) / (f + BM25_K1 * (1 - BM25_B + BM25_B * dl / tamMedio));
+        }
+      }
       if (s > 0) mapa.set(n.id, s * mul * damp);
     };
     acumula(scoreLex, termosPergunta);
