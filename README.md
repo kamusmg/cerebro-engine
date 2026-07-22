@@ -72,6 +72,11 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 As 4 furadas restantes são **cobertura** (símbolos Arduino/`.ino` que o parser não extrai), **não** recall.
 Nos alvos que existem no grafo: **20/20**. Reproduza com `node harness-recall.mjs`.
 
+> ⚠️ **Não leia esta tabela sem a composição do gabarito.** A maioria destas perguntas cai no regime
+> em que uma busca textual já resolveria — o que infla qualquer número agregado. Os detalhes estão em
+> [o que estes números **não** provam](#-o-que-estes-números-não-provam), e vale a pena ler antes de
+> comparar com o seu.
+
 ### O gabarito de treino não basta — e a prova disso
 
 As 24 perguntas acima são **treino**: elas e os ajustes que elas justificam nasceram juntos. Por isso
@@ -100,6 +105,42 @@ A/B a qualquer momento: `CEREBRO_LEXICO=legado|bm25|prefixo`.
 > **Se você for medir seu próprio retriever, roube isto e não o número:** um gabarito onde você
 > ajustou parâmetros não mede mais o motor, mede o gabarito. Construa o segundo ao contrário
 > (alvo primeiro, por sorteio; pergunta depois) e rode-o **uma vez por mudança**.
+
+## ⚖️ O que estes números **não** provam
+
+Um número agregado esconde **de que tipo** eram as perguntas. Seguindo o
+[CodeCompass](https://arxiv.org/abs/2602.20048), que mede recuperação de código em três regimes,
+classificamos cada pergunta **mecanicamente** — quem decide é o grafo, não o autor:
+
+| | o alvo é… | quem já resolveria |
+|---|---|---|
+| **G1** | nomeado por um termo da própria pergunta | `grep` |
+| **G2** | a ≤2 saltos de algo que a pergunta nomeia | travessia — **é aqui que o grafo deveria pagar** |
+| **G3** | nem nomeado nem alcançável por travessia curta | só um índice semântico |
+
+E o resultado é desconfortável:
+
+| | composição | G1 | G2 | G3 |
+|---|---|---|---|---|
+| treino (24) | 71% G1 | 16/17 · MRR **0.843** | 2/2 · hit@3 **0/2** | 2/5 |
+| held-out (14) | **86% G1** | 12/12 · MRR **0.892** | n=1 | n=1 |
+
+**Ou seja: o `MRR 0.764` é, na prática, o número do G1** — o regime em que a busca por palavra já
+funcionaria. O motor é muito bom nele. No regime que justificaria um grafo existir, ele é
+**não-provado**, e em dois pontos por motivos diferentes:
+
+- **G2 é um defeito de ORDENAÇÃO, não de recuperação.** Recall 2/2, hit@3 **0/2**: o motor **acha o
+  alvo e o enterra no fim da lista**. A causa é conhecida — a distância no grafo só assume 3 valores,
+  então dezenas de nós empatam e o desempate acaba sendo a ordem de inserção do BFS. *(Já tentamos
+  desempatar por convergência, somando `1/(1+d)` sobre cada seed: piorou os dois gabaritos e custou
+  +51% de token. Provavelmente porque premia o nó-hub, que é justamente o que o damping `sqrt(refs)`
+  existe pra conter. Se essa for sua primeira ideia — foi a nossa, e não funcionou.)*
+- **Sobre G3 não há amostra pra concluir nada** (n=1 de cada lado), e dizer o contrário seria inventar.
+
+> **A leitura honesta:** o que está demonstrado aqui é **economia de token** — a mesma resposta com
+> uma fração do contexto. **Superioridade sobre `grep` não está demonstrada**, porque o gabarito é
+> majoritariamente do tipo que o `grep` acerta. Se você publicar números do seu retriever, publique a
+> **composição** junto: sem ela, "MRR 0.76" pode significar coisas muito diferentes.
 
 ## 🚀 Instalação
 
