@@ -102,6 +102,31 @@ desenho final: BM25 com `k1`/`b` nos **defaults da literatura** e casamento **po
 
 A/B a qualquer momento: `CEREBRO_LEXICO=legado|bm25|prefixo`.
 
+### 🔴 Correção: a coluna held-out acima foi medida com o motor amputado
+
+A ponte de reescrita cross-language é 1 chamada a uma API free. A cota tinha estourado; o motor
+degradou pro braço léxico e **avisou** (`rewrite=falhou`) — mas o harness não lia o aviso e
+publicou o número como se fosse propriedade do motor. Reproduzido depois na vírgula, escondendo o
+cache e a chave: `recall 12/14 · MRR 0.764 · 34.6 nós`, dígito por dígito.
+
+Com a ponte viva, mesmo gabarito:
+
+| léxico | held-out (ponte VIVA) | nós/pergunta |
+|---|---|---|
+| substring (legado) | recall **14/14** · hit@3 12/14 · MRR **0.885** | 39.1 |
+| **prefixo + BM25 (padrão)** | recall **14/14** · hit@3 **13/14** · MRR 0.867 | 41.4 |
+
+Duas consequências. A primeira é boa: **o motor é melhor do que estava publicado.** A segunda não:
+**a escolha do léxico padrão foi feita com o motor amputado.** Amputado, `prefixo` ganhava com
+folga; inteiro, os dois **empatam** — `legado` leva no MRR, `prefixo` no hit@3 e custa ~6% mais
+nós. `prefixo` segue como padrão pelo treino (0.693 vs 0.653), mas por margem estreita.
+
+> **A lição, que vale pra qualquer harness:** um componente opcional que cai sozinho transforma
+> toda medição seguinte numa medição de outro motor. Se o seu retriever tem parte que pode
+> degradar, **o medidor tem que se recusar a dar número** quando ela cai. Aqui a trava existia —
+> em *outro* arquivo, posto no dia anterior. Defesa aplicada num lugar só é defesa que ainda não
+> existe.
+
 > **Se você for medir seu próprio retriever, roube isto e não o número:** um gabarito onde você
 > ajustou parâmetros não mede mais o motor, mede o gabarito. Construa o segundo ao contrário
 > (alvo primeiro, por sorteio; pergunta depois) e rode-o **uma vez por mudança**.

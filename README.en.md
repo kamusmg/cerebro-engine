@@ -101,6 +101,31 @@ BM25 with literature-default `k1`/`b`, and **prefix** matching.
 
 A/B at any time: `CEREBRO_LEXICO=legado|bm25|prefixo`.
 
+### 🔴 Correction: the held-out column above was measured on a crippled engine
+
+The cross-language rewrite bridge is one call to a free-tier API. The quota had run out; the engine
+degraded to the lexical arm alone and **said so** (`rewrite=falhou`) — but the harness never read
+the warning and published the number as a property of the engine. Reproduced exactly afterwards, by
+hiding the cache and the key: `recall 12/14 · MRR 0.764 · 34.6 nodes`, digit for digit.
+
+With the bridge alive, same golden set:
+
+| lexical arm | held-out (bridge ALIVE) | nodes/question |
+|---|---|---|
+| substring (legacy) | recall **14/14** · hit@3 12/14 · MRR **0.885** | 39.1 |
+| **prefix + BM25 (default)** | recall **14/14** · hit@3 **13/14** · MRR 0.867 | 41.4 |
+
+Two consequences. The good one: **the engine is better than what was published.** The bad one:
+**the default lexical arm was chosen on a crippled engine.** Crippled, `prefix` won comfortably;
+intact, the two are **tied** — `legado` leads on MRR, `prefix` on hit@3 at ~6% more nodes. `prefix`
+stays the default on the strength of the training set (0.693 vs 0.653), but by a narrow margin.
+
+> **The lesson, good for any harness:** an optional component that fails on its own turns every
+> subsequent measurement into a measurement of a different engine. If your retriever has a part
+> that can degrade, **the harness must refuse to print a number** when it does. Here that guard
+> existed — in *another* file, added the day before. A defense applied in one place is a defense
+> that doesn't exist yet.
+
 > **If you benchmark your own retriever, steal this and not the number:** a golden set you tuned
 > against no longer measures the engine, it measures the set. Build the second one backwards (target
 > first, by sampling; question afterwards) and run it **once per change**.

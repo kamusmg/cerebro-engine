@@ -205,10 +205,12 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
   const termosTodos = new Set([...termosPergunta, ...termosRewrite].map(raiz));
 
   for (const n of nodes) {
-    const tx = textoBusca(n, rationaleDe);
-    textos.set(n.id, tx);
-
+    // Só o modo legado consome esse blob. Construí-lo sempre custava um normaliza() + uma string
+    // grande (label + caminho + comunidade + TODA a prosa das docstrings) por nó, guardados num
+    // Map que no modo padrão nunca era lido — desperdício que cresce com o tamanho do grafo.
     if (LEXICO_LEGADO) {
+      const tx = textoBusca(n, rationaleDe);
+      textos.set(n.id, tx);
       const vistos = new Set();
       for (const w of new Set([...termosPergunta, ...termosRewrite])) {
         if (!vistos.has(w) && tx.includes(w)) { docFreq.set(w, (docFreq.get(w) ?? 0) + 1); vistos.add(w); }
@@ -266,8 +268,12 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
       } else {
         const cont = tf.get(n.id);
         const dl = tamDoc.get(n.id) ?? 1;
-        for (const w0 of termos) {
-          const w = raiz(w0);
+        // DUPLA CONTAGEM: `termos` vem deduplicado como texto CRU, mas a pontuação usa a RAIZ.
+        // `video` e `videos` são strings diferentes com a mesma raiz — a pergunta (ou o rewrite,
+        // que gosta de devolver singular E plural) fazia o mesmo termo somar BM25 duas vezes no
+        // mesmo nó. O `tf` já era indexado por raiz única (termosTodos, acima); só o laço de
+        // score ficou de fora. Deduplicar aqui alinha os dois lados.
+        for (const w of new Set(termos.map(raiz))) {
           const f = cont.get(w) ?? 0;
           if (!f) continue;
           // BM25: saturação por k1 + normalização por tamanho por b
