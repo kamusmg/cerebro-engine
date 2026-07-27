@@ -184,6 +184,28 @@ final — não o par de nós.** Caso contrário você mede G1 achando que mede G
 > Se você publicar números do seu retriever, publique a **composição** junto: sem ela, "MRR 0.76"
 > pode significar coisas muito diferentes.
 
+### E conte tool calls, não só tokens
+
+Uma corrida real de agente (headless, transcript medido) expôs um custo que o nosso benchmark
+**não enxergava**. Na pergunta mais difícil do conjunto, o motor acertou o alvo na **2ª chamada** —
+e o agente gastou **mais 15 chamadas** de leitura e busca só para descobrir *onde o arquivo mora*.
+
+Causa: a resposta trazia `src=` **relativo à raiz do projeto**, e quem consome não sabe qual é essa
+raiz. Emitir a raiz e caminhos absolutos levou a mesma pergunta de **17 tool calls para 2**.
+
+| | antes | depois |
+|---|---|---|
+| chamadas ao grafo | 1 | 1 |
+| leitura/busca de arquivo | **15** | **0** |
+| **total** | **17** | **2** |
+
+> **Um índice que devolve um endereço que o leitor não consegue abrir cobra em tool call o que
+> economizou em token.** Um benchmark que mede só o token do retorno nunca vê essa conta — a nossa
+> métrica de 6.2x não via.
+
+Se você mede retrieval para agente, meça **tool calls até a resposta**. É a unidade que o usuário
+paga em latência, em contexto e em paciência.
+
 ## 🚀 Instalação
 
 **Pré-requisitos:** **Node 22+**, o **[graphify](https://github.com/safishamsi/graphify)**

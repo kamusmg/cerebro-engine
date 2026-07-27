@@ -77,7 +77,16 @@ async function chamaFerramenta(name, args) {
       if (mode === 'summary') throw new Error(`${p.name} has no cached summary yet — use mode "graph"`);
     }
     const res = await consultar({ grafoPath: grafo, raiz: p.root, pergunta: question });
-    return `${formata(res, p.name)}\n[graph of ${p.name} — the file is the truth, confirm before editing]`;
+    // Absolute paths in the answer. Measured in a real headless agent run: the engine found the
+    // right symbol on call #2, then the agent burned **15 more tool calls** (Read/Glob/Bash) just
+    // locating the file — `src=` was relative to the project root and the consumer has no idea what
+    // that root is. Emitting the root plus absolute paths took the same question from 17 tool calls
+    // to 2. An index that returns an address the reader cannot open charges back in tool calls what
+    // it saved in tokens — and a token-only benchmark never sees that bill.
+    const raizPosix = p.root.replace(/\\/g, '/').replace(/\/$/, '');
+    const cabecalho = `Project root: ${raizPosix}\n(paths below are absolute — open them directly, do not search for them)\n\n`;
+    const corpo = formata(res, p.name).replace(/src=(?!\/|[A-Za-z]:)([^\s\]]+)/g, (_, rel) => `src=${raizPosix}/${rel}`);
+    return `${cabecalho}${corpo}\n[graph of ${p.name} — the file is the truth, confirm before editing]`;
   }
   throw new Error(`unknown tool: ${name}`);
 }
