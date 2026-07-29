@@ -160,9 +160,26 @@ funcionaria. O motor é muito bom nele. No regime que justificaria um grafo exis
   desempatar por convergência, somando `1/(1+d)` sobre cada seed: piorou os dois gabaritos e custou
   +51% de token. Provavelmente porque premia o nó-hub, que é justamente o que o damping `sqrt(refs)`
   existe pra conter. Se essa for sua primeira ideia — foi a nossa, e não funcionou.)*
-- **G3 foi medido depois, num terceiro conjunto — e o resultado é contra a aposta deste projeto:**
-  **1/3**. Some com **0/1** no G2 e com os 0/2 anteriores, e três conjuntos independentes contam a
-  mesma história: ótimo no G1, fraco onde o grafo deveria ser a única resposta.
+
+  **Atualização de 29/07/2026 — uma segunda causa, e esta era maior.** O peso de recência valia
+  **×50** na escolha dos arquivos: qualquer arquivo tocado no git nos últimos 30 dias batia qualquer
+  arquivo não tocado, independente de relevância. Flagrado numa pergunta real em que os *seeds*
+  acertaram o símbolo-alvo (**rank 1 sem o boost**) e oito arquivos recém-editados passaram na
+  frente — o alvo não entrou nem no top-8. Ou seja: parte do "acha e enterra" era este tempero, não
+  o empate do BFS. Baixado pra **×3**, escolhido no gabarito cego (held-out 14/14, treino 20/24;
+  `×1` ganhava no treino e **caía** no held-out).
+  **O que ainda não medimos: se isso conserta o hit@3 do G2.** É plausível e não está verificado —
+  o estrato G2 não foi re-rodado depois da mudança. Fica como hipótese aberta, não como conserto.
+  O erro de origem vale mais que o número: a medição de 18/07 comparou *boost-no-nó × boost-no-arquivo*
+  e escolheu o segundo. **Ninguém comparou boost × ausência de boost.** Toda heurística tem que
+  vencer o baseline "sem ela".
+- **G3 continua NÃO TESTADO — nem confirmado, nem refutado.** Um terceiro conjunto deu **1/3**, e
+  este texto durante cinco dias chamou isso de *"resultado contra a aposta do projeto"*, somando com
+  o `0/1` do G2 pra dizer que "três conjuntos independentes contam a mesma história". **Era
+  autocontradição:** a seção logo abaixo explica que **8 das 12 perguntas daquele conjunto nem eram
+  G3** — então ele não é um terceiro conjunto independente, e `1/3` sobre uma amostra
+  desqualificada não é evidência de nada. Corrigido em 29/07/2026. O que sobra é honesto e menor:
+  **ninguém mediu G3 ainda.** A linha de trabalho está arquivada por **custo**, não por refutação.
 
 ### E o conjunto "G3" nem era G3 — o que é um aviso pra quem for repetir isto
 
@@ -177,9 +194,11 @@ final — não o par de nós.** Caso contrário você mede G1 achando que mede G
 
 > **A leitura honesta:** o que está demonstrado aqui é **economia de token** — a mesma resposta com
 > uma fração do contexto, e isso se sustentou em toda medição (6.2x, acerto 20/24). **Superioridade
-> sobre `grep` não só não está demonstrada: a pouca evidência que existe aponta contra.** As amostras
-> de G2/G3 são pequenas e não decidem nada sozinhas, mas são as únicas que existem, e seria desonesto
-> escondê-las atrás de um número agregado bonito.
+> sobre `grep` não está demonstrada** — e note que "não demonstrada" é diferente de "refutada", que é
+> o que este parágrafo afirmava até 29/07/2026 ("a pouca evidência que existe aponta contra"). Só o
+> G2 tem defeito medido e real; o conjunto de G3 era inválido. As amostras são pequenas e não decidem
+> nada sozinhas, mas são as únicas que existem, e seria desonesto escondê-las atrás de um número
+> agregado bonito — ou endurecê-las em veredito, que é o erro oposto e foi o que aconteceu aqui.
 >
 > Se você publicar números do seu retriever, publique a **composição** junto: sem ela, "MRR 0.76"
 > pode significar coisas muito diferentes.

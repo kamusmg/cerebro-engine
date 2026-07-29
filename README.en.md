@@ -159,9 +159,26 @@ already work. The engine is very good there. In the regime that would justify a 
   summing `1/(1+d)` across seeds: it regressed both sets and cost +51% tokens, most likely because it
   rewards hub nodes — exactly what the `sqrt(refs)` damping exists to prevent. If that's your first
   idea, it was ours too, and it didn't work.)*
-- **G3 was later measured on a third set — and the result runs against this project's bet:** **1/3**.
-  Add **0/1** on G2 plus the earlier 0/2, and three independent sets tell the same story: excellent
-  on G1, weak exactly where the graph was supposed to be the only answer.
+
+  **Update 2026-07-29 — a second cause, and this one was bigger.** The recency weight was **×50** in
+  the file-selection step: any file touched in git within 30 days outranked any untouched file,
+  regardless of relevance. Caught on a real question where the seeds hit the exact target symbol
+  (**rank 1 with the boost off**) and eight recently-edited files pushed past it — the target did not
+  even make the top 8. So part of "finds it and buries it" was this spice, not the BFS tie. Lowered to
+  **×3**, chosen on the blind set (held-out 14/14, training 20/24; `×1` won on training and **lost**
+  on held-out).
+  **What we have NOT measured: whether this fixes G2's hit@3.** It is plausible and unverified — the
+  G2 stratum has not been re-run since the change. It stays a hypothesis, not a fix.
+  The origin error matters more than the number: the 2026-07-18 measurement compared
+  *boost-on-node vs boost-on-file* and picked the latter. **Nobody compared boost vs NO boost.**
+  Every heuristic has to beat the "without it" baseline.
+- **G3 remains UNTESTED — neither confirmed nor refuted.** A third set scored **1/3**, and for five
+  days this text called that *"a result that runs against the project's bet"*, adding G2's `0/1` to
+  claim "three independent sets tell the same story". **That was self-contradictory:** the section
+  just below explains that **8 of the 12 questions in that set were not G3 at all** — so it is not an
+  independent third set, and `1/3` over a disqualified sample is evidence of nothing. Corrected
+  2026-07-29. What is left is honest and smaller: **nobody has measured G3 yet.** That line of work
+  is shelved for **cost**, not because it was refuted.
 
 ### And the "G3" set wasn't G3 — a warning for anyone repeating this
 
@@ -176,9 +193,12 @@ final question — not the node pair.** Otherwise you measure G1 while believing
 
 > **The honest reading:** what's demonstrated here is **token economy** — the same answer from a
 > fraction of the context, and that held up in every measurement (6.2x, 20/24 hit rate). **Superiority
-> over `grep` is not merely undemonstrated: the little evidence that exists points against it.** The
-> G2/G3 samples are small and settle nothing on their own, but they are the only ones there are, and
-> hiding them behind a pretty aggregate would be dishonest.
+> over `grep` is undemonstrated** — and note that "undemonstrated" is not "refuted", which is what
+> this paragraph asserted until 2026-07-29 ("the little evidence that exists points against it").
+> Only G2 has a measured, real defect; the G3 set was invalid. The samples are small and settle
+> nothing on their own, but they are the only ones there are, and hiding them behind a pretty
+> aggregate would be dishonest — as would hardening them into a verdict, which is the opposite error
+> and is the one that happened here.
 >
 > If you publish numbers for your retriever, publish the **composition** alongside them: without it,
 > "MRR 0.76" can mean very different things.
