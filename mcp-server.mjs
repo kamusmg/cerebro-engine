@@ -83,8 +83,21 @@ async function chamaFerramenta(name, args) {
     // that root is. Emitting the root plus absolute paths took the same question from 17 tool calls
     // to 2. An index that returns an address the reader cannot open charges back in tool calls what
     // it saved in tokens — and a token-only benchmark never sees that bill.
+    // Read a WINDOW, not the whole file (2026-07-29) — measured in a head-to-head against a
+    // tool that returns source inline instead of addresses. That design pays ~3,200 tokens per
+    // question and zero follow-up Reads; this one pays ~1,500 and the agent pays the Read. The
+    // end-to-end bill depends entirely on HOW it reads:
+    //     addresses + 80-line window Read   2,254 tk  ← this design wins
+    //     addresses + whole-file Read        5,887 tk  ← this design loses badly
+    //     source inline                      3,209 tk
+    // In a real headless run the agent read whole files. The `loc=L<n>` was already in the
+    // answer and went unused — data that is present but never acted on is not data delivered.
+    // This turns the line number into an instruction.
     const raizPosix = p.root.replace(/\\/g, '/').replace(/\/$/, '');
-    const cabecalho = `Project root: ${raizPosix}\n(paths below are absolute — open them directly, do not search for them)\n\n`;
+    const cabecalho = `Project root: ${raizPosix}\n`
+      + `(paths below are absolute — open them directly, do not search for them)\n`
+      + `(each NODE carries loc=L<line>: read with offset/limit around that line, ~40 lines each side.\n`
+      + ` Reading whole files here costs more than the graph saved.)\n\n`;
     const corpo = formata(res, p.name).replace(/src=(?!\/|[A-Za-z]:)([^\s\]]+)/g, (_, rel) => `src=${raizPosix}/${rel}`);
     return `${cabecalho}${corpo}\n[graph of ${p.name} — the file is the truth, confirm before editing]`;
   }
