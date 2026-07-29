@@ -42,7 +42,23 @@ const MAX_ARQUIVOS = 5;    // corte final por arquivo — fiel ao que o harness 
 const W_GENERICO   = Number(process.env.CEREBRO_W_GENERICO   ?? 0.1); // símbolo genérico/privado/definido em >5 arquivos
 const W_BEMNOMEADO = Number(process.env.CEREBRO_W_BEMNOMEADO ?? 10);  // identificador longo bem-nomeado
 const MIN_IDENT    = Number(process.env.CEREBRO_MIN_IDENT    ?? 8);   // tamanho mínimo pra contar como "bem-nomeado"
-const W_RECENTE    = Number(process.env.CEREBRO_W_RECENTE    ?? 50);  // arquivo mexido no git nos últimos 30 dias
+// RECENCY: 50 → 3 (2026-07-29). This was a spice that had never been measured against its own
+// absence. The 2026-07-18 measurement compared boost-on-node vs boost-on-file and picked the
+// latter — nobody ever compared "with boost" vs "no boost at all". At ×50 recency stops being a
+// tie-breaker and becomes a DOMINANT term: any file touched in the last 30 days outranks any
+// untouched file regardless of relevance. On a repo under active refactoring that amounts to
+// "return whatever I edited this week", and the graph stops contributing.
+//
+// Caught on a real question: the seeds hit the exact target symbol (rank 1 with no boost) and
+// eight recently-edited files pushed past it — the target did not even make the top 8.
+//
+// The value 3 was chosen on the HELD-OUT set, not the training set, and that mattered:
+//   W=1 (no boost)  training recall 21/24 (best!) · held-out 13/14 · 56 nodes  ← overfit
+//   W=3             training recall 20/24 · held-out 14/14 MRR 0.871 · 42 nodes
+//   W=50 (before)   training recall 19/24 · held-out 14/14 MRR 0.871 · 42 nodes
+// W=3 ties the old value on held-out and beats it on training, so it dominates. W=1 won on
+// training and lost on held-out — precisely what a blind golden set exists to catch.
+const W_RECENTE    = Number(process.env.CEREBRO_W_RECENTE    ?? 3);   // file touched in git in the last 30 days
 
 // ---------- utilidades de texto ----------
 const semAcento = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
