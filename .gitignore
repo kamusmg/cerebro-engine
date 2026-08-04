@@ -4,7 +4,19 @@ node_modules/
 projects.json
 
 # ephemeral local caches / artifacts
-.rewrite-cache.json
 graphify-out/
 reports/golden-questions.json
 reports/recall.md
+
+# .rewrite-cache.json — SAME FILE, OPPOSITE NATURE IN THE TWO REPOS (2026-08-04).
+#
+# In the author's private repo it is now VERSIONED: with the Gemini call gone there is no
+# generator left to rebuild it, so losing it would silently cost recall (measured there:
+# 21/24 training and 14/14 held-out with it, 18/24 and 12/14 without).
+#
+# Here it stays IGNORED, and not by oversight. This cache fills up with identifiers mined from
+# whatever codebases the machine points at — class and function names straight out of private
+# repos. Versioning it here would turn a local optimisation into a leak channel that grows on
+# its own, in a repo whose whole design rule is "carries nothing personal". Same file, same
+# code, different repo, different answer.
+.rewrite-cache.json

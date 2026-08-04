@@ -58,7 +58,12 @@ function avalia(srcs, alvos) {
 
 const motores = SO === 'novo' ? [['novo', []]] : [['novo', []], ['graphify', ['--motor=graphify']]];
 const acc = {};
-for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {} };
+// PERGUNTA APOSENTADA (04/08/2026): quando o código-alvo é retirado do projeto de propósito, a
+// pergunta não vira errada — vira INAPLICÁVEL. Apagá-la faria o recall subir sem nada ter
+// melhorado (ajustar a régua pra agradar o resultado). Deixá-la calada é pior: uma pergunta que
+// nunca mais passa vira desculpa pronta pro próximo miss REAL ("ah, esse é o conhecido"). Então
+// ela fica, falha, e é contada SEPARADO — com os dois números na tela, sempre.
+for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {}, aposentadas: 0, recallVivas: 0, hit3Vivas: 0, rrVivas: 0 };
 
 const linhas = [];
 for (const q of golden) {
@@ -76,6 +81,8 @@ for (const q of golden) {
     row[nome] = m;
     acc[nome].origens[origem] = (acc[nome].origens[origem] ?? 0) + 1;
     acc[nome].recall += m.recall; acc[nome].hit3 += m.hit3; acc[nome].rr += m.rr; acc[nome].nos += m.nos;
+    if (q.aposentado) acc[nome].aposentadas++;
+    else { acc[nome].recallVivas += m.recall; acc[nome].hit3Vivas += m.hit3; acc[nome].rrVivas += m.rr; }
   }
   linhas.push(row);
 }
@@ -92,6 +99,10 @@ for (const [nome] of motores) {
   const a = acc[nome];
   const validas = N - a.erros;
   console.log(`  ${nome.padEnd(10)} recall ${a.recall}/${validas} · hit@3 ${a.hit3}/${validas} · MRR ${(a.rr / (validas || 1)).toFixed(3)} · nós/pergunta ${(a.nos / (validas || 1)).toFixed(1)}`);
+  if (a.aposentadas) {
+    const vivas = validas - a.aposentadas;
+    console.log(`  ${' '.repeat(10)} └─ sem as ${a.aposentadas} aposentada(s): recall ${a.recallVivas}/${vivas} · hit@3 ${a.hit3Vivas}/${vivas} · MRR ${(a.rrVivas / (vivas || 1)).toFixed(3)}`);
+  }
   // procedência: sem isto o mesmo comando dá números diferentes em máquinas diferentes (cache
   // quente vs clone novo) e o relatório não avisa.
   const proc = Object.entries(a.origens).map(([k, v]) => `${k} ${v}`).join(' · ');

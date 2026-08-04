@@ -35,12 +35,17 @@ const grafoDe = (p) => join(p.root, 'graphify-out', 'graph.json');
 const TOOLS = [
   {
     name: 'ask_graph',
-    description: 'Ask a project\'s code graph WHERE something lives, in natural language (any language — a cross-language rewrite bridges e.g. Portuguese question to English identifiers). Returns the few files/symbols that answer it, so you read those instead of many files. The graph is an INDEX — confirm in the real file before editing.',
+    description: 'Ask a project\'s code graph WHERE something lives. Returns the few files/symbols that answer it, so you read those instead of many files. ALWAYS pass "terms": you know the codebase and the conversation, so you translate the question into likely code identifiers better than any bridge could — without them this falls back to plain lexical matching. The graph is an INDEX — confirm in the real file before editing.',
     inputSchema: {
       type: 'object',
       properties: {
         question: { type: 'string', description: 'Natural-language question, e.g. "where is the auth token validated".' },
         project: { type: 'string', description: 'Project name (call list_projects to see the options).' },
+        terms: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '4-10 identifiers you expect to find IN THE CODE for this question — English, snake_case/camelCase, e.g. ["validate_token","auth_middleware","jwt_verify"]. If the question is in another language, translate the concepts to code English (legenda→subtitle/caption). Omit only if you truly have no guess.',
+        },
         mode: {
           type: 'string',
           enum: ['auto', 'graph', 'summary'],
@@ -63,7 +68,7 @@ async function chamaFerramenta(name, args) {
     return com.length ? `Projects with a graph:\n${com.join('\n')}` : 'No project has a graph yet. Run `graphify update <path>` and add it to projects.json.';
   }
   if (name === 'ask_graph') {
-    const { question, project, mode = 'auto' } = args ?? {};
+    const { question, project, terms, mode = 'auto' } = args ?? {};
     if (!question || !project) throw new Error('both "question" and "project" are required');
     const p = acha(project);
     if (!p) throw new Error(`project "${project}" not found — call list_projects`);
@@ -76,7 +81,7 @@ async function chamaFerramenta(name, args) {
       if (resumo) return resumo;
       if (mode === 'summary') throw new Error(`${p.name} has no cached summary yet — use mode "graph"`);
     }
-    const res = await consultar({ grafoPath: grafo, raiz: p.root, pergunta: question });
+    const res = await consultar({ grafoPath: grafo, raiz: p.root, pergunta: question, termos: terms });
     // Absolute paths in the answer. Measured in a real headless agent run: the engine found the
     // right symbol on call #2, then the agent burned **15 more tool calls** (Read/Glob/Bash) just
     // locating the file — `src=` was relative to the project root and the consumer has no idea what

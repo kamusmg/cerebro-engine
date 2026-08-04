@@ -1,5 +1,6 @@
 [
   { "projeto": "my-backend", "pergunta": "where is the auth token validated", "alvos": ["auth.py"], "nota": "ground truth: grep in YOUR repo, never from memory" },
   { "projeto": "my-backend", "pergunta": "onde o webhook de pagamento é processado", "alvos": ["payments.py"], "nota": "a Portuguese question against English code exercises the PT->EN bridge" },
-  { "projeto": "my-frontend", "pergunta": "the debounce hook for the search input", "alvos": ["useDebounce.ts"], "nota": "camelCase identifier" }
+  { "projeto": "my-frontend", "pergunta": "the debounce hook for the search input", "alvos": ["useDebounce.ts"], "nota": "camelCase identifier" },
+  { "projeto": "my-backend", "pergunta": "builds the legacy report cache", "alvos": ["legacy_cache.py"], "aposentado": "file removed on purpose in a refactor — question stays and keeps failing, scored separately, never deleted", "nota": "shows the `aposentado` field: harness-recall.mjs prints a second '└─ without N retired' line instead of letting recall drift up for the wrong reason" }
 ]

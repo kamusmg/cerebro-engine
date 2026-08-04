@@ -11,8 +11,8 @@
 //
 // O conserto, copiando o melhor do mercado (nada se cria, tudo se copia):
 //   • aider repo-map  → sqrt(refs) damping + x0.1 genérico/privado + x10 bem-nomeado (mata (a))
-//   • query-rewrite   → 1 chamada Gemini free traduz PT→EN de código (mata (b)); cai pra
-//                       léxico-só se o Gemini falhar (nunca falha muda)
+//   • query-rewrite   → PT→EN code terms come from WHOEVER ASKS (kills (b)); without them,
+//                       local cache; without cache, lexical-only — a named degrade, never silent
 //   • RRF k=60        → funde os braços (léxico + rewrite + grafo) por RANK, imune às escalas
 //   • GraphRAG local  → padrão "seed bom → BFS", travessia PRÓPRIA sobre o graph.json
 //
@@ -27,7 +27,6 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = import.meta.dirname;
 const REWRITE_CACHE = path.join(REPO, '.rewrite-cache.json');
-const KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
 
 const K_RRF = 60;          // constante canônica do Reciprocal Rank Fusion (Cormack 2009)
 const N_SEEDS = 8;         // quantos seeds alimentam o BFS
@@ -84,47 +83,58 @@ const hash = (s) => {
 // ---------- query-rewrite: a ponte semântica PT→EN (Gemini free, cacheado, com fallback) ----------
 const leJson = (f, padrao) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return padrao; } };
 
-async function reescreve(pergunta) {
-  // O CACHE VEM PRIMEIRO, antes de exigir chave: ele é dado LOCAL, já pago. A ordem invertida
-  // fazia o motor sem GEMINI_API_KEY devolver ZERO seed mesmo com a resposta em disco — medido:
-  // 22 nós → 0 na mesma pergunta, e o recall do gabarito caía 20/24 → 17/24, apagando a
-  // vantagem sobre o baseline. Quem não tem chave é exatamente quem mais precisa do cache.
+async function reescreve(pergunta, termosDoChamador) {
+  // BASELINE SWITCH (2026-08-04): turn this arm off to measure what it actually buys. House
+  // rule — every heuristic has to beat its own ABSENCE. Without a switch that comparison never
+  // happens: it's how the ×50 recency spice lived for weeks unproven, and how this arm almost
+  // died today by association (the heavy-cycle Gemini key is a different thing, and that one
+  // really costs nothing).
+  if (process.env.CEREBRO_SEM_REWRITE) return { termos: [], origem: 'desligado' };
+
+  // The cache is LOCAL data already paid for, and it serves whoever calls without terms
+  // (harness, cron, bash).
+  // WHAT IT ACTUALLY BUYS (measured 2026-08-04, with the CEREBRO_SEM_REWRITE switch):
+  //   training (24)   with rewrite 21/24 · without 18/24   → +3 answers
+  //   held-out (14)   with rewrite 14/14 · without 12/14   → +2 answers
+  // Recall, hit@3, and MRR all drop together in both measurements: this arm really pays for
+  // itself. (An earlier comment here cited 20/24→17/24 — the DROP is the same, the baseline
+  // just moved up by 1 since then.)
+  // That's why this file is VERSIONED as of today: without Gemini there's no generator left
+  // to rebuild it. Worth keeping the older history too: when the cache sat BEHIND an
+  // `if (!KEY) return`, the engine with no key returned ZERO seeds even with the answer on
+  // disk — 22 nodes → 0 on the same question. That order punished exactly whoever needed it
+  // most.
   const cache = leJson(REWRITE_CACHE, {});
   const chave = hash(normaliza(pergunta));
-  if (cache[chave]) return { termos: cache[chave], origem: 'cache' };
-  if (!KEY) return { termos: [], origem: 'sem-chave' };
 
-  const prompt = [
-    `Uma pergunta em português sobre um código-fonte (identificadores costumam ser em inglês).`,
-    `Pergunta: "${pergunta}"`,
-    ``,
-    `Liste de 4 a 10 TERMOS que provavelmente aparecem NO CÓDIGO (nomes de função/variável em`,
-    `inglês, snake_case ou camelCase, e substantivos técnicos em inglês). Traduza os conceitos`,
-    `em português para o inglês de código (ex.: legenda→subtitle/caption, pontuação→punctuation,`,
-    `acento→accent). Responda SÓ com um array JSON de strings, nada mais.`,
-  ].join('\n');
-
-  for (const model of ['gemini-2.5-flash-lite', 'gemini-2.5-flash']) {
-    try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!r.ok) { if (r.status === 429) continue; throw new Error(`HTTP ${r.status}`); }
-      const txt = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      const m = txt.match(/\[[\s\S]*\]/);            // pesca o array mesmo se vier com cerca ```json
-      const arr = m ? JSON.parse(m[0]) : null;
-      if (Array.isArray(arr) && arr.length) {
-        const termos = [...new Set(arr.map((t) => String(t)).filter(Boolean))];
-        cache[chave] = termos;
+  // WHOEVER ASKS ALREADY KNOWS HOW TO TRANSLATE (2026-08-04) — and translates better than the
+  // translator this used to hire. This arm exists to turn a Portuguese question into the code's
+  // English identifiers. It used to pay for a network call to Gemini free tier for that; but on
+  // the MCP path the caller IS a model — one that knows the project, the conversation, and what
+  // already failed — while gemini-flash-lite got 12 loose words and sometimes handed back broken
+  // JSON. Paying the smaller model to translate for the bigger one was backwards, and it cost
+  // network, a 30s timeout, quota, a 429 branch, and an ENTIRE KEY on the critical path of every
+  // new question. Now the terms arrive with the request. Zero network, on any path.
+  //
+  // Comes BEFORE the cache on purpose: whoever has context right now translates better than a
+  // translation frozen weeks ago.
+  if (termosDoChamador?.length) {
+    const termos = [...new Set(termosDoChamador.map((t) => String(t)).filter(Boolean))];
+    // Written for whoever does NOT have a model at hand: harness, cron, or you typing in bash.
+    if (JSON.stringify(cache[chave]) !== JSON.stringify(termos)) {
+      cache[chave] = termos;
+      try {
         const tmp = `${REWRITE_CACHE}.tmp-${process.pid}`;
         fs.writeFileSync(tmp, JSON.stringify(cache, null, 2)); fs.renameSync(tmp, REWRITE_CACHE);
-        return { termos, origem: model };
-      }
-    } catch { /* tenta o próximo modelo; se ambos falharem, cai no léxico-só */ }
+      } catch { /* the cache is an optimization; failing here can't take the question down */ }
+    }
+    return { termos, origem: 'chamador' };
   }
-  return { termos: [], origem: 'falhou' };
+
+  if (cache[chave]) return { termos: cache[chave], origem: 'cache' };
+  // No terms and no cache: lexical-only. This is a known, NAMED degrade, not a silent
+  // failure — formata() prints `rewrite=sem-termos` in the output, so it's visible happening.
+  return { termos: [], origem: 'sem-termos' };
 }
 
 // ---------- carga do grafo ----------
@@ -330,10 +340,10 @@ function bfs(G, seeds, depth, cap) {
 }
 
 // ---------- a consulta ----------
-export async function consultar({ grafoPath, raiz, pergunta, semRewrite = false }) {
+export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite = false }) {
   const G = carregaGrafo(grafoPath);
   const termosPergunta = [...new Set(tokens(pergunta))];
-  const rw = semRewrite ? { termos: [], origem: 'desligado' } : await reescreve(pergunta);
+  const rw = semRewrite ? { termos: [], origem: 'desligado' } : await reescreve(pergunta, termos);
   const termosRewrite = [...new Set(rw.termos.flatMap((t) => tokens(t)))];
 
   const { scoreLex, scoreRw } = pontuaSeeds(G, termosPergunta, termosRewrite);
@@ -426,7 +436,17 @@ export function resumoAmplo(pergunta, nomeProjeto, forcado = false) {
   // voltaria a cair na travessia cara sem ninguém perceber.
   const f = path.join(path.dirname(fileURLToPath(import.meta.url)), 'resumos', `${nomeProjeto}.md`);
   if (!fs.existsSync(f)) return null;
-  return `${fs.readFileSync(f, 'utf8')}\n[resumo cacheado de ${nomeProjeto} — pra detalhe, faça uma pergunta específica ao grafo]`;
+  // AGE COMES ALONG (2026-08-04). The generator for these summaries (resumo-projetos.mjs) was
+  // deleted along with the Gemini dependency, so they no longer refresh — they freeze on the day
+  // they were born. A stale summary presented as if it were current is the project's cardinal
+  // sin wearing new clothes: not "couldn't find out," but "answered wrong, silently." With the
+  // date and age in plain sight, the reader decides whether to trust it or ask the graph a
+  // specific question instead (which is live).
+  const dias = Math.floor((Date.now() - fs.statSync(f).mtimeMs) / 86400000);
+  const aviso = dias >= 30
+    ? `⚠️  resumo CONGELADO há ${dias} dias e sem gerador — trate como histórico, não como estado atual`
+    : `resumo cacheado de ${nomeProjeto} (${dias}d)`;
+  return `${fs.readFileSync(f, 'utf8')}\n[${aviso} — pra detalhe atual, faça uma pergunta específica ao grafo]`;
 }
 
 // formata igual à saída do graphify (NODE/EDGE) pra medição e leitura continuarem valendo

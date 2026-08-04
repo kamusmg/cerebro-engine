@@ -49,7 +49,7 @@ O grafo é o **índice**; o arquivo é a **verdade** — sempre confirme no cód
 ```console
 $ node ask.mjs "onde o token de autenticação é validado" meu-backend
 
-Traversal: seeds=[validate_token() · verify_jwt() · AuthMiddleware] | rewrite=gemini | 12 nós em 3 arquivos
+Traversal: seeds=[validate_token() · verify_jwt() · AuthMiddleware] | rewrite=chamador | 12 nós em 3 arquivos
 
 NODE validate_token()   [src=app/auth/token.py       loc=L42  community=3]
 NODE verify_jwt()       [src=app/auth/token.py       loc=L58  community=3]
@@ -227,9 +227,8 @@ paga em latência, em contexto e em paciência.
 
 ## 🚀 Instalação
 
-**Pré-requisitos:** **Node 22+**, o **[graphify](https://github.com/safishamsi/graphify)**
-(`uv tool install "graphifyy[gemini]"`) e, opcionalmente, uma **`GEMINI_API_KEY`** (free tier) pra ponte
-de tradução da pergunta.
+**Pré-requisitos:** **Node 22+** e o **[graphify](https://github.com/safishamsi/graphify)**
+(`uv tool install "graphifyy[gemini]"`). Nenhuma chave de API — o motor é 100% local.
 
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
@@ -248,7 +247,8 @@ cp reports/golden-questions.example.json reports/golden-questions.json   # edite
 node harness-recall.mjs
 ```
 
-**Flags:** `--motor=graphify` (A/B contra o graphify puro) · `--sem-rewrite` (desliga a ponte de idioma) ·
+**Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo — pula o cache/léxico-só) ·
+`--motor=graphify` (A/B contra o graphify puro) · `--sem-rewrite` (desliga a ponte de idioma) ·
 `--cru` (bruto, sem re-rank).
 
 ## 🔌 Como ferramenta MCP (Claude Desktop, Cursor, Antigravity…)
@@ -277,7 +277,7 @@ Zero dependência — o protocolo MCP é implementado à mão (o projeto é vani
 flowchart LR
     Q["pergunta<br/>(qualquer idioma)"] --> S{seleção de seed}
     S -->|léxico + IDF| A[seeds léxicos]
-    S -->|rewrite PT→EN<br/>Gemini free| B[seeds traduzidos]
+    S -->|rewrite PT→EN<br/>termos de quem pergunta| B[seeds traduzidos]
     A --> BFS[BFS próprio<br/>no graph.json]
     B --> BFS
     BFS --> RRF["Reciprocal Rank Fusion<br/>k=60"]
@@ -309,9 +309,9 @@ A ponte de idioma é o pulo do gato: você pergunta *"onde mantém a **pontuaç�
 
 ## ⚠️ Escopo e limites (honestos)
 
-- **"Local" tem um asterisco:** a ponte de tradução da pergunta (rewrite) faz **1 chamada ao Gemini**
-  (free tier). O resto — grafo, BFS, RRF — é 100% local. Sem internet/chave, ele **avisa** e cai pra
-  busca léxica (`--sem-rewrite` força isso). Futuro: modelo local (Ollama).
+- **100% local, sem chave nenhuma:** a ponte de tradução da pergunta (rewrite) não faz mais chamada de
+  rede — os termos vêm de QUEM PERGUNTA (você digitando `--termos`, ou o modelo que chama via MCP).
+  Sem termos, cai pro cache local; sem cache, busca léxica (`--sem-rewrite` força isso).
 - **Escala de REPO, não de monorepo gigante:** o `graph.json` é carregado inteiro na memória. Pra
   repos pessoais/médios (centenas–milhares de nós) voa; um monorepo de centenas de MB um dia pediria
   índice em disco (SQLite/DuckDB).
