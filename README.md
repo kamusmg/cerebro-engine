@@ -228,7 +228,12 @@ paga em latência, em contexto e em paciência.
 ## 🚀 Instalação
 
 **Pré-requisitos:** **Node 22+** e o **[graphify](https://github.com/safishamsi/graphify)**
-(`uv tool install "graphifyy[gemini]"`). Nenhuma chave de API — o motor é 100% local.
+(`uv tool install graphifyy`). Nenhuma chave de API — o motor é 100% local.
+
+> O extra `[gemini]` do graphify **não é necessário** para este motor. Ele serve às features de
+> LLM do próprio graphify (`extract`, `label` — dar nome às comunidades), que este projeto não
+> usa. Se quiser essas features do graphify, instale `"graphifyy[gemini]"` e configure a chave
+> **dele**; nada aqui vai pedir chave.
 
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
