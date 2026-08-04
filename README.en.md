@@ -206,7 +206,12 @@ final question — not the node pair.** Otherwise you measure G1 while believing
 ## 🚀 Install
 
 **Prereqs:** **Node 22+** and **[graphify](https://github.com/safishamsi/graphify)**
-(`uv tool install "graphifyy[gemini]"`). No API key at all — the engine is 100% local.
+(`uv tool install graphifyy`). No API key at all — the engine is 100% local.
+
+> Graphify's `[gemini]` extra is **not required** by this engine. It powers graphify's own LLM
+> features (`extract`, `label` — naming communities), which this project does not use. If you
+> want those, install `"graphifyy[gemini]"` and configure **its** key; nothing here will ask
+> you for one.
 
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
