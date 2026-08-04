@@ -48,7 +48,7 @@ The graph is the **index**; the file is the **truth** — always confirm in the 
 ```console
 $ node ask.mjs "where is the auth token validated" my-backend
 
-Traversal: seeds=[validate_token() · verify_jwt() · AuthMiddleware] | rewrite=gemini | 12 nodes in 3 files
+Traversal: seeds=[validate_token() · verify_jwt() · AuthMiddleware] | rewrite=chamador | 12 nodes in 3 files
 
 NODE validate_token()   [src=app/auth/token.py       loc=L42  community=3]
 NODE verify_jwt()       [src=app/auth/token.py       loc=L58  community=3]
@@ -205,9 +205,8 @@ final question — not the node pair.** Otherwise you measure G1 while believing
 
 ## 🚀 Install
 
-**Prereqs:** **Node 22+**, **[graphify](https://github.com/safishamsi/graphify)**
-(`uv tool install "graphifyy[gemini]"`), and optionally a **`GEMINI_API_KEY`** (free tier) for the
-cross-language rewrite.
+**Prereqs:** **Node 22+** and **[graphify](https://github.com/safishamsi/graphify)**
+(`uv tool install "graphifyy[gemini]"`). No API key at all — the engine is 100% local.
 
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
@@ -226,7 +225,8 @@ cp reports/golden-questions.example.json reports/golden-questions.json   # edit 
 node harness-recall.mjs
 ```
 
-**Flags:** `--motor=graphify` (A/B vs raw graphify) · `--sem-rewrite` (disable the language bridge) ·
+**Flags:** `--termos "a,b,c"` (translate the question yourself — skips cache/lexical-only) ·
+`--motor=graphify` (A/B vs raw graphify) · `--sem-rewrite` (disable the language bridge) ·
 `--cru` (raw, no re-rank).
 
 ## 🔌 As an MCP tool (Claude Desktop, Cursor, Antigravity…)
@@ -255,7 +255,7 @@ Zero dependencies — the MCP protocol is implemented by hand (the project is va
 flowchart LR
     Q["question<br/>(any language)"] --> S{seed selection}
     S -->|lexical + IDF| A[lexical seeds]
-    S -->|rewrite → code EN<br/>Gemini free| B[translated seeds]
+    S -->|rewrite → code EN<br/>caller-supplied terms| B[translated seeds]
     A --> BFS[own BFS<br/>over graph.json]
     B --> BFS
     BFS --> RRF["Reciprocal Rank Fusion<br/>k=60"]
@@ -283,9 +283,9 @@ flowchart LR
 
 ## ⚠️ Scope & honest limits
 
-- **"Local" has an asterisk:** the query-rewrite bridge makes **one call to Gemini** (free tier).
-  Everything else — graph, BFS, RRF — is 100% local. With no internet/key it **warns** and falls back
-  to lexical search (`--sem-rewrite` forces that). Future: a local model (Ollama).
+- **100% local, no key required:** the query-rewrite bridge no longer makes a network call — the
+  terms come from WHOEVER ASKS (you passing `--termos`, or the model calling over MCP). No terms
+  falls back to the local cache; no cache falls back to lexical search (`--sem-rewrite` forces that).
 - **Repo-scale, not giant-monorepo scale:** `graph.json` is loaded fully into memory. Fast for
   personal/medium repos (hundreds–thousands of nodes); a hundreds-of-MB monorepo would eventually need
   an on-disk index (SQLite/DuckDB).

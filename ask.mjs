@@ -7,11 +7,11 @@
 // from projects.json and the graph path is passed explicitly via --graph.
 //
 // ENGINE: by default uses the OWN retrieval layer (retrieval.mjs) — hybrid seed selection
-// (lexical + cross-language query-rewrite via Gemini free tier + aider-style hardening) +
+// (lexical + cross-language query-rewrite from caller-supplied terms + aider-style hardening) +
 // own BFS + Reciprocal Rank Fusion. Measured: recall 15/24 -> 20/24 on the author's golden
 // set. The old path (graphify query + aider re-rank) stays under `--motor=graphify` for A/B.
 //
-// Usage: node ask.mjs "<question>" <project> [--motor=graphify] [--sem-rewrite] [--cru]
+// Usage: node ask.mjs "<question>" <project> [--termos "a,b,c"] [--motor=graphify] [--sem-rewrite] [--cru]
 //        node ask.mjs --lista
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -24,8 +24,16 @@ const projetos = JSON.parse(readFileSync(join(ROOT, 'projects.json'), 'utf8'));
 
 const [pergunta, alvo, ...resto] = process.argv.slice(2);
 
+// --termos: whoever calls this script is almost always a model, and a model translates "how
+// the scene gets built" into the code's identifiers better than any automatic bridge — free,
+// no network, no key. This used to cost one Gemini call per new question.
+const iTermos = resto.indexOf('--termos');
+const termos = iTermos >= 0 && resto[iTermos + 1]
+  ? resto[iTermos + 1].split(',').map((t) => t.trim()).filter(Boolean)
+  : undefined;
+
 if (!pergunta || pergunta === '--lista' || !alvo) {
-  console.log('Uso: node ask.mjs "<pergunta>" <projeto>\n\nProjetos com grafo:');
+  console.log('Uso: node ask.mjs "<pergunta>" <projeto> [--termos "build_scene,render_frame"]\n\nProjetos com grafo:');
   for (const p of projetos) {
     const g = join(p.root, 'graphify-out', 'graph.json');
     if (existsSync(g)) console.log(`  ${p.name.padEnd(26)} ${p.root}`);
@@ -127,7 +135,7 @@ try {
     });
     console.log(resto.includes('--cru') ? saida : reRankeia(saida, achado.root));
   } else {
-    const res = await consultar({ grafoPath: grafo, raiz: achado.root, pergunta, semRewrite: resto.includes('--sem-rewrite') });
+    const res = await consultar({ grafoPath: grafo, raiz: achado.root, pergunta, termos, semRewrite: resto.includes('--sem-rewrite') });
     console.log(formata(res, achado.name));
   }
   console.log(`[grafo de ${achado.name} — o arquivo é a verdade, confirme antes de editar]`);
