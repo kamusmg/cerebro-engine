@@ -72,6 +72,30 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 As 4 furadas restantes são **cobertura** (símbolos Arduino/`.ino` que o parser não extrai), **não** recall.
 Nos alvos que existem no grafo: **20/20**. Reproduza com `node harness-recall.mjs`.
 
+### Os três caminhos do mesmo motor (25/08/2026)
+
+A tabela acima mede **um** caminho. O motor é usado por três portas diferentes, e até 25/08 só a
+do meio tinha número — que era citado como se descrevesse a primeira. Agora as três são medidas
+lado a lado, na mesma execução:
+
+| caminho | recall | hit@3 | MRR |
+|---|:---:|:---:|:---:|
+| `--termos` vindos de quem pergunta | 20/24 | 17/24 | **0.701** |
+| acerto no cache de rewrite | **21/24** | 17/24 | 0.636 |
+| `--sem-rewrite` (sem o braço de termos) | 17/24 | 14/24 | 0.533 |
+
+Duas leituras. **O braço de termos paga**: 3 a 4 respostas a mais que o baseline, e +0,10 a +0,17
+de MRR. E o caminho de produção **troca um acerto por um ranking claramente melhor** — o que faz
+sentido, porque quem pergunta conhece a conversa e escolhe identificadores melhores que um cache
+congelado semanas atrás.
+
+> ⚠️ **Medir estes dois primeiros caminhos juntos exige `CEREBRO_CACHE_RO=1`** (o harness já liga).
+> Sem isso, medir o caminho `--termos` **grava os termos da medição dentro do cache de rewrite**,
+> e o caminho do cache passa a devolver os mesmos termos: os dois braços viram o mesmo número e o
+> baseline do braço antigo morre dentro da própria medição. Isso foi pego acontecendo — o braço
+> do cache caiu de 21/24 · MRR 0,636 para exatamente o número do outro, o que **parece um achado
+> e é um artefato**. Termômetro não pode mudar a temperatura.
+
 > ⚠️ **Não leia esta tabela sem a composição do gabarito.** A maioria destas perguntas cai no regime
 > em que uma busca textual já resolveria — o que infla qualquer número agregado. Os detalhes estão em
 > [o que estes números **não** provam](#-o-que-estes-números-não-provam), e vale a pena ler antes de
@@ -253,8 +277,20 @@ node harness-recall.mjs
 ```
 
 **Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo — pula o cache/léxico-só) ·
-`--motor=graphify` (A/B contra o graphify puro) · `--sem-rewrite` (desliga a ponte de idioma) ·
+`--sem-rewrite` (desliga o braço de termos — é assim que se mede o baseline) ·
 `--cru` (bruto, sem re-rank).
+
+> **`--motor=graphify` foi removida em 25/08/2026.** Ela ligava o braço de comparação do A/B
+> contra o `graphify` puro, e o A/B fechou em 29/07. O motivo do corte não foi o peso morto:
+> **aquele comparador era enviesado.** Ele casava recência de arquivo por *basename*, que é
+> exatamente o defeito que o motor novo já tinha consertado casando por caminho completo — dois
+> arquivos de mesmo nome em pastas diferentes contavam como um só de um lado da comparação e não
+> do outro. O adversário corria manco, e toda margem publicada pende para o mesmo lado.
+>
+> **Isso não derruba o veredito** — a diferença é grande demais pra ser só o viés, e o motor
+> próprio continua. Mas o número não pode mais ser citado como se fosse limpo. Última medição
+> antes do corte, com a régua ainda torta: **motor próprio 21/24 · MRR 0,636 × caminho graphify
+> 14/24 · MRR 0,519**.
 
 ## 🔌 Como ferramenta MCP (Claude Desktop, Cursor, Antigravity…)
 

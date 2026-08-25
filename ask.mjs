@@ -6,16 +6,29 @@
 // silently — the agent falls back to reading dozens of files. Here the project root comes
 // from projects.json and the graph path is passed explicitly via --graph.
 //
-// ENGINE: by default uses the OWN retrieval layer (retrieval.mjs) — hybrid seed selection
-// (lexical + cross-language query-rewrite from caller-supplied terms + aider-style hardening) +
-// own BFS + Reciprocal Rank Fusion. Measured: recall 15/24 -> 20/24 on the author's golden
-// set. The old path (graphify query + aider re-rank) stays under `--motor=graphify` for A/B.
+// ENGINE: the OWN retrieval layer (retrieval.mjs) — hybrid seed selection (lexical +
+// cross-language query-rewrite from caller-supplied terms + aider-style hardening) + own BFS +
+// Reciprocal Rank Fusion.
 //
-// Usage: node ask.mjs "<question>" <project> [--termos "a,b,c"] [--motor=graphify] [--sem-rewrite] [--cru]
+// Measured on the author's golden set, along all THREE paths the engine is actually used
+// through (2026-08-25). Until then only the middle one had a number, and it was quoted as if
+// it described the first:
+//
+//   caller-supplied --termos   recall 20/24 · hit@3 17/24 · MRR 0.701   <- what production uses
+//   rewrite cache hit          recall 21/24 · hit@3 17/24 · MRR 0.636
+//   --sem-rewrite (no terms)   recall 17/24 · hit@3 14/24 · MRR 0.533   <- baseline
+//
+// Read it this way: the term arm pays for itself (3-4 more answers found than the baseline),
+// and caller-supplied terms trade one hit for a clearly better rank. Held-out set: 14/14 ·
+// MRR 0.869.
+//
+// The old path (graphify query + aider re-rank) was REMOVED on 2026-08-25 — see the block above
+// the `try`, together with the numbers it measured with a crooked ruler.
+//
+// Usage: node ask.mjs "<question>" <project> [--termos "a,b,c"] [--sem-rewrite] [--cru]
 //        node ask.mjs --lista
 import { readFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { consultar, formata, resumoAmplo } from './retrieval.mjs';
 
@@ -71,73 +84,36 @@ if (!resto.includes('--grafo')) {
   }
 }
 
-// re-rank estilo aider — FIEL AO QUE FOI MEDIDO: o score é por nó, o ranking e o corte
-// são por ARQUIVO (top-5 arquivos, todos os nós deles). Foi assim que o harness chegou
-// em MRR 0.473→0.659; cortar por nó parecia igual e deixava o alvo de fora.
-const MAX_ARQUIVOS = 5;
-const NODE_RE = /^NODE (.+?) \[src=(.+?) loc=/;
-function reRankeia(saida, raiz) {
-  const linhas = saida.split('\n');
-  const nos = [];
-  for (const l of linhas) {
-    const m = NODE_RE.exec(l);
-    if (m) nos.push({ linha: l, label: m[1], src: m[2] });
-  }
-  if (nos.length <= 1) return saida;
-
-  let recentes = new Set();
-  try {
-    recentes = new Set(execFileSync('git', ['-C', raiz, 'log', '--since=30.days', '--name-only', '--format='],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').filter(Boolean).map((f) => basename(f.trim())));
-  } catch { /* sem git = sem peso de recência */ }
-
-  const palavras = pergunta.toLowerCase().split(/\W+/).filter((w) => w.length >= 4);
-  const scoreArquivo = new Map();
-  nos.forEach((n, i) => {
-    let s = 1 / (1 + i * 0.1); // leve prior da ordem do BFS
-    if (palavras.some((w) => n.label.toLowerCase().includes(w))) s *= 10;
-    if (recentes.has(basename(n.src))) s *= 50;
-    if (/^(index|utils?|main|misc|helpers?)\b/i.test(n.label)) s *= 0.1;
-    n.score = s;
-    scoreArquivo.set(n.src, Math.max(scoreArquivo.get(n.src) ?? 0, s));
-  });
-  const topArquivos = new Set([...scoreArquivo.entries()].sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_ARQUIVOS).map(([f]) => f));
-  const escolhidos = nos.filter((n) => topArquivos.has(n.src)).sort((a, b) => b.score - a.score);
-  const labels = new Set(escolhidos.map((n) => n.label));
-
-  const EDGE_RE = /^EDGE (.+?) --.*?--> (.+)$/;
-  const resultado = [];
-  for (const l of linhas) {
-    // 'NODE ' que não casou a regex é nó sem src (ValueError, BaseModel...) — lixo, fora
-    if (l.startsWith('NODE ')) continue;              // nós entram reordenados, abaixo do cabeçalho
-    if (l.startsWith('... (truncated')) continue;     // aviso do orçamento CRU, não vale pós-corte
-    const em = EDGE_RE.exec(l);                       // aresta só se as duas pontas sobreviveram
-    if (em && !(labels.has(em[1]) && labels.has(em[2]))) continue;
-    resultado.push(l);
-    if (/^Traversal:/.test(l)) resultado.push('', ...escolhidos.map((n) => n.linha));
-  }
-  if (scoreArquivo.size > MAX_ARQUIVOS) {
-    resultado.push(`[re-rank aider: ${scoreArquivo.size}→${topArquivos.size} arquivos; use --cru pra ver tudo]`);
-  }
-  return resultado.join('\n');
-}
-
-// Motor PRÓPRIO é o padrão (seed híbrido + rewrite PT→EN + RRF; conserta o teto de recall
-// de 18/07). `--motor=graphify` volta pro caminho antigo (graphify query + reRankeia) pra A/B.
-const MOTOR_GRAPHIFY = resto.includes('--motor=graphify');
+// THE A/B AGAINST THE OLD PATH IS CLOSED (2026-07-29), AND THE COMPARATOR WAS REMOVED
+// ON 2026-08-25.
+//
+// This is where `reRankeia()` — an aider-style re-rank over `graphify query` output — and the
+// `--motor=graphify` branch used to live. Two reasons, and the second is the one that matters:
+//
+// 1. The experiment is over. Keeping the comparison arm of a settled experiment is dead weight.
+//
+// 2. THE COMPARATOR WAS BIASED, and that contaminated every head-to-head number it produced.
+//    It matched file recency by `basename` — the exact bug that `retrieval.mjs` documents
+//    having fixed in the NEW engine by matching on the full path. Two files with the same name
+//    in different folders counted as one file on one side of the comparison and not on the
+//    other. So the old path ran with a limp against an engine with a good leg, and every
+//    published margin leans the same way: toward whoever holds the good ruler.
+//
+//    The numbers measured with that crooked ruler are kept here rather than deleted, because
+//    cutting the code and leaving the number loose in the docs is the worst of both worlds:
+//      • the MRR 0.473 -> 0.659 that justified the aider re-rank
+//      • the head-to-head margin reported in the README
+//      • last measurement before removal (2026-08-25, ruler still crooked):
+//        own engine 21/24 · MRR 0.636  ×  graphify path 14/24 · MRR 0.519
+//
+//    None of this overturns the verdict — the gap is far too wide to be bias alone, and the
+//    own engine stays. But the number can no longer be quoted as if it were clean.
+//
+// Production never went through here: `reRankeia` only ran under `--motor=graphify`.
 
 try {
-  if (MOTOR_GRAPHIFY) {
-    const saida = execFileSync('graphify', ['query', pergunta, '--graph', grafo,
-      ...resto.filter((r) => r !== '--cru' && !r.startsWith('--motor='))], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000,
-    });
-    console.log(resto.includes('--cru') ? saida : reRankeia(saida, achado.root));
-  } else {
-    const res = await consultar({ grafoPath: grafo, raiz: achado.root, pergunta, termos, semRewrite: resto.includes('--sem-rewrite') });
-    console.log(formata(res, achado.name));
-  }
+  const res = await consultar({ grafoPath: grafo, raiz: achado.root, pergunta, termos, semRewrite: resto.includes('--sem-rewrite') });
+  console.log(formata(res, achado.name));
   console.log(`[grafo de ${achado.name} — o arquivo é a verdade, confirme antes de editar]`);
 } catch (e) {
   console.error(`query falhou: ${e.message}`);

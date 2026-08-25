@@ -5,22 +5,24 @@
 // O sinal fim-a-fim é ESTE: numa pergunta real, o arquivo que teria que ser editado aparece
 // na resposta do grafo? Se não aparece, o modelo cai no Read-tudo e a economia é zero.
 //
-// Compara os dois motores (novo próprio × --motor=graphify antigo). Métricas por pergunta:
-//   • recall  — algum arquivo-alvo aparece em QUALQUER lugar da saída (top-5 arquivos)
-//   • hit@3   — o alvo está entre os 3 primeiros NODE
-//   • rank    — posição do 1º NODE-alvo (pra MRR)
-//   • nós     — nº de linhas NODE (proxy barato de tokens)
+// Measures the engine along its three real paths (see the note above `motores`). Per question:
+//   • recall  — a target file appears ANYWHERE in the output (top-5 files)
+//   • hit@3   — the target is among the first 3 NODE lines
+//   • rank    — position of the 1st target NODE (for MRR)
+//   • nodes   — number of NODE lines (cheap proxy for tokens)
 //
-// Uso: node harness-recall.mjs            (roda os dois motores)
-//      node harness-recall.mjs --so=novo  (só o motor novo)
+// Last full run (2026-08-25, author's golden set, 24 questions):
+//   chamador     recall 20/24 · hit@3 17/24 · MRR 0.701   <- production path
+//   cache        recall 21/24 · hit@3 17/24 · MRR 0.636
+//   sem-rewrite  recall 17/24 · hit@3 14/24 · MRR 0.533   <- baseline
+//
+// Usage: node harness-recall.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const REPO = import.meta.dirname;
 const golden = JSON.parse(fs.readFileSync(path.join(REPO, 'reports', 'golden-questions.json'), 'utf8'));
-const args = process.argv.slice(2);
-const SO = args.find((a) => a.startsWith('--so='))?.slice(5);
 
 const SRC_RE = /^NODE .+? \[src=(.+?) loc=/;
 
@@ -33,7 +35,9 @@ function roda(pergunta, projeto, flags) {
   let erro = null;
   try {
     saida = execFileSync('node', [path.join(REPO, 'ask.mjs'), pergunta, projeto, ...flags],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 90_000 });
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 90_000,
+        // the thermometer must not change the temperature — see the note above `motores`
+        env: { ...process.env, CEREBRO_CACHE_RO: '1' } });
   } catch (e) {
     saida = e.stdout ?? '';
     erro = String(e.stderr || e.message).split('\n').find(Boolean)?.slice(0, 90) ?? 'falhou';
@@ -56,19 +60,57 @@ function avalia(srcs, alvos) {
   };
 }
 
-const motores = SO === 'novo' ? [['novo', []]] : [['novo', []], ['graphify', ['--motor=graphify']]];
+// THE THREE PATHS OF THE SAME ENGINE (2026-08-25). Not three engines — one engine, measured
+// at each of the doors it is actually used through. Until now only the middle one had a number,
+// and that number was quoted as if it described the first.
+//
+//   'chamador'    the caller passes identifiers via --termos. This is the PRODUCTION path.
+//   'cache'       nobody passes terms and .rewrite-cache.json answers. This is what this
+//                 harness always measured.
+//   'sem-rewrite' the engine WITHOUT the term arm, on purpose. The baseline — the only way to
+//                 answer "what is the arm worth?", which every heuristic here owes.
+//
+// The old `--motor=graphify` comparison arm was removed together with the code it drove. The
+// two could not be cut separately: this harness's DEFAULT run depended on that flag, so
+// removing it only from ask.mjs would have turned it into an unknown argument, silently
+// ignored, and the harness would have compared the new engine AGAINST ITSELF — publishing a
+// tie with the face of a measurement.
+//
+// IMPORTANT: run with CEREBRO_CACHE_RO=1 (this harness sets it). Without it, measuring the
+// 'chamador' path writes the measurement's own terms into the rewrite cache, and the 'cache'
+// arm then returns those same terms — both arms collapse into one number and the baseline dies
+// inside the measurement. Caught happening.
+const motores = [['chamador', 'termos'], ['cache', null], ['sem-rewrite', 'baseline']];
 const acc = {};
 // PERGUNTA APOSENTADA (04/08/2026): quando o código-alvo é retirado do projeto de propósito, a
 // pergunta não vira errada — vira INAPLICÁVEL. Apagá-la faria o recall subir sem nada ter
 // melhorado (ajustar a régua pra agradar o resultado). Deixá-la calada é pior: uma pergunta que
 // nunca mais passa vira desculpa pronta pro próximo miss REAL ("ah, esse é o conhecido"). Então
 // ela fica, falha, e é contada SEPARADO — com os dois números na tela, sempre.
-for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {}, aposentadas: 0, recallVivas: 0, hit3Vivas: 0, rrVivas: 0 };
+for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {}, aposentadas: 0, recallVivas: 0, hit3Vivas: 0, rrVivas: 0, amputadas: 0 };
+
+// AN AMPUTATED ENGINE IS NOT AN ENGINE THAT MISSED (guard added 2026-08-25).
+// When no terms are supplied and the cache has no entry, the engine falls back to lexical-only
+// and SAYS SO — it prints `rewrite=sem-termos`. This harness did not read that notice, so a
+// run without the term arm scored as a plain miss and the engine took the blame for an
+// accident. It never fired by luck: the golden set is fully cached.
+//
+// The wider lesson, written down because it will happen again: a guard written against
+// yesterday's amputation does not know the name of today's. The earlier guards here knew
+// `falhou` and `sem-chave` — the names produced when the rewrite bridge was a network call.
+// When the bridge was replaced by caller-supplied terms, a new failure mode appeared under a
+// new name and no guard was watching it.
+//
+// `desligado` stays OUT on purpose: that is --sem-rewrite, an explicit choice by whoever is
+// measuring, and it is exactly how the baseline gets its number.
+const AMPUTADAS = new Set(['falhou', 'sem-chave', 'sem-termos']);
 
 const linhas = [];
 for (const q of golden) {
   const row = { pergunta: q.pergunta.slice(0, 40), projeto: q.projeto };
-  for (const [nome, flags] of motores) {
+  for (const [nome, modo] of motores) {
+    const flags = modo === 'baseline' ? ['--sem-rewrite']
+      : modo && q.termos?.length ? ['--termos', q.termos.join(',')] : [];
     const { srcs, erro, origem } = roda(q.pergunta, q.projeto, flags);
     if (erro) {
       // não soma zero: marca ERRO e conta separado, senão "não rodou" vira "errou"
@@ -77,9 +119,17 @@ for (const q of golden) {
       console.error(`  ! ${nome} falhou em "${q.pergunta.slice(0, 30)}": ${erro}`);
       continue;
     }
+    acc[nome].origens[origem] = (acc[nome].origens[origem] ?? 0) + 1;
+    if (AMPUTADAS.has(origem)) {
+      // out of the aggregate: a number measured without an arm is a property of the accident,
+      // not of the engine
+      row[nome] = { amputada: true };
+      acc[nome].amputadas++;
+      console.error(`  ~ ${nome} AMPUTATED on "${q.pergunta.slice(0, 30)}": rewrite=${origem}`);
+      continue;
+    }
     const m = avalia(srcs, q.alvos);
     row[nome] = m;
-    acc[nome].origens[origem] = (acc[nome].origens[origem] ?? 0) + 1;
     acc[nome].recall += m.recall; acc[nome].hit3 += m.hit3; acc[nome].rr += m.rr; acc[nome].nos += m.nos;
     if (q.aposentado) acc[nome].aposentadas++;
     else { acc[nome].recallVivas += m.recall; acc[nome].hit3Vivas += m.hit3; acc[nome].rrVivas += m.rr; }

@@ -121,7 +121,16 @@ async function reescreve(pergunta, termosDoChamador) {
   if (termosDoChamador?.length) {
     const termos = [...new Set(termosDoChamador.map((t) => String(t)).filter(Boolean))];
     // Written for whoever does NOT have a model at hand: harness, cron, or you typing in bash.
-    if (JSON.stringify(cache[chave]) !== JSON.stringify(termos)) {
+    //
+    // CEREBRO_CACHE_RO (2026-08-25) — the thermometer must not change the temperature.
+    // Measuring the `chamador` arm used to write the measurement's own terms right here, and
+    // from that point on the `cache` arm returned those same terms: both arms collapsed into
+    // one number and the older arm's baseline was destroyed by the act of measuring it. This
+    // was caught happening — the cache arm dropped from 21/24 · MRR 0.636 to exactly the
+    // caller arm's figure, which reads like a finding and is an artifact.
+    //
+    // Set CEREBRO_CACHE_RO=1 in any harness or benchmark that compares the two paths.
+    if (!process.env.CEREBRO_CACHE_RO && JSON.stringify(cache[chave]) !== JSON.stringify(termos)) {
       cache[chave] = termos;
       try {
         const tmp = `${REWRITE_CACHE}.tmp-${process.pid}`;

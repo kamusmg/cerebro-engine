@@ -70,6 +70,31 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 
 The 4 residual misses are **coverage** (Arduino/`.ino` symbols the parser doesn't extract), **not**
 retrieval. On targets that exist in the graph: **20/20**. Reproduce with `node harness-recall.mjs`.
+### The three paths of the same engine (2026-08-25)
+
+The table above measures **one** path. The engine is used through three different doors, and
+until 2026-08-25 only the middle one had a number — which was quoted as if it described the
+first. All three are now measured side by side, in the same run:
+
+| path | recall | hit@3 | MRR |
+|---|:---:|:---:|:---:|
+| `--termos` supplied by the caller | 20/24 | 17/24 | **0.701** |
+| rewrite-cache hit | **21/24** | 17/24 | 0.636 |
+| `--sem-rewrite` (no term arm) | 17/24 | 14/24 | 0.533 |
+
+Two readings. **The term arm pays for itself**: 3 to 4 more answers found than the baseline, and
++0.10 to +0.17 MRR. And the production path **trades one hit for a clearly better rank** — which
+makes sense, because whoever asks knows the conversation and picks better identifiers than a
+cache frozen weeks ago.
+
+> ⚠️ **Measuring the first two paths together requires `CEREBRO_CACHE_RO=1`** (the harness sets
+> it). Without it, measuring the `--termos` path **writes the measurement's own terms into the
+> rewrite cache**, and the cache path then returns those same terms: both arms collapse into one
+> number and the older arm's baseline dies inside the measurement itself. This was caught
+> happening — the cache arm dropped from 21/24 · MRR 0.636 to exactly the other arm's figure,
+> which **reads like a finding and is an artifact**. The thermometer must not change the
+> temperature.
+
 
 > ⚠️ **Don't read this table without the composition of the golden set.** Most of these questions
 > fall in the regime where plain text search would already work, which inflates any aggregate number.
@@ -231,8 +256,20 @@ node harness-recall.mjs
 ```
 
 **Flags:** `--termos "a,b,c"` (translate the question yourself — skips cache/lexical-only) ·
-`--motor=graphify` (A/B vs raw graphify) · `--sem-rewrite` (disable the language bridge) ·
+`--sem-rewrite` (turn the term arm off — this is how the baseline gets measured) ·
 `--cru` (raw, no re-rank).
+
+> **`--motor=graphify` was removed on 2026-08-25.** It enabled the comparison arm of the A/B
+> against raw `graphify`, and that A/B closed on 2026-07-29. Dead weight was not the reason for
+> cutting it: **that comparator was biased.** It matched file recency by *basename* — the exact
+> defect the new engine had already fixed by matching on the full path. Two files with the same
+> name in different folders counted as one on one side of the comparison and not on the other.
+> The old path ran with a limp, and every published margin leans the same way.
+>
+> **This does not overturn the verdict** — the gap is far too wide to be bias alone, and the own
+> engine stays. But the number can no longer be quoted as if it were clean. Last measurement
+> before removal, ruler still crooked: **own engine 21/24 · MRR 0.636 × graphify path 14/24 ·
+> MRR 0.519**.
 
 ## 🔌 As an MCP tool (Claude Desktop, Cursor, Antigravity…)
 
