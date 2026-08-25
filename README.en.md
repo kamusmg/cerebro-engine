@@ -265,6 +265,18 @@ cp reports/golden-questions.example.json reports/golden-questions.json   # edit 
 node harness-recall.mjs
 ```
 
+> ⚠️ **On first use, pass `--termos`.** The rewrite cache (`.rewrite-cache.json`) **does not
+> ship** — it holds identifiers from the author's projects, so git ignores it. On a fresh clone
+> it is empty, and a question in one language against code in another falls back to plain
+> lexical matching: the engine **says so** (`rewrite=sem-termos`), but the result will be poor.
+>
+> This is the design, not a bug to work around. **Whoever asks translates better than any
+> automatic bridge**, because they have the conversation; measured, the term arm is worth 3 to 4
+> more answers found. The cache exists only for callers with no model at hand — cron, a script,
+> you in bash.
+>
+> Through **MCP** this never comes up: the host model fills the terms in by itself.
+
 **Flags:** `--termos "a,b,c"` (translate the question yourself — skips cache/lexical-only) ·
 `--sem-rewrite` (turn the term arm off — this is how the baseline gets measured) ·
 `--cru` (raw, no re-rank).

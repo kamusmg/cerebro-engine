@@ -286,6 +286,17 @@ cp reports/golden-questions.example.json reports/golden-questions.json   # edite
 node harness-recall.mjs
 ```
 
+> ⚠️ **No primeiro uso, passe `--termos`.** O cache de tradução (`.rewrite-cache.json`) **não
+> vem no clone** — ele guarda identificadores dos projetos do autor, então é ignorado pelo git.
+> Num clone limpo ele está vazio, e uma pergunta em português contra código em inglês cai no
+> léxico puro: o motor **avisa** (`rewrite=sem-termos`), mas o resultado será ruim.
+>
+> Isso não é um defeito a contornar — é o desenho. **Quem pergunta traduz melhor que qualquer
+> ponte automática**, porque conhece a conversa; medido, o braço de termos vale 3 a 4 respostas
+> a mais. O cache existe só pra quem chama sem um modelo do lado (cron, script, você no bash).
+>
+> Pelo **MCP** o problema não aparece: o modelo hospedeiro preenche os termos sozinho.
+
 **Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo — pula o cache/léxico-só) ·
 `--sem-rewrite` (desliga o braço de termos — é assim que se mede o baseline) ·
 `--cru` (bruto, sem re-rank).
