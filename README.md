@@ -70,7 +70,17 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 | **+ BM25 com casamento por prefixo** | **20/24** | 18/24 | **0.693** |
 
 As 4 furadas restantes são **cobertura** (símbolos Arduino/`.ino` que o parser não extrai), **não** recall.
-Nos alvos que existem no grafo: **20/20**. Reproduza com `node harness-recall.mjs`.
+Nos alvos que existem no grafo: **20/20**.
+
+> 🔴 **VOCÊ NÃO CONSEGUE REPRODUZIR ESTES NÚMEROS, e é justo você saber disso antes de confiar
+> neles.** Até 25/08 esta linha dizia *"reproduza com `node harness-recall.mjs`"* — e não dava:
+> o gabarito aponta para repositórios **privados** do autor, então publicá-lo vazaria exatamente
+> o que este repo toma o cuidado de não vazar. O harness está aqui, o método está descrito, os
+> números são reprodutíveis **pelo autor** — e para você são a palavra dele.
+>
+> O que dá pra fazer é medir **o seu**: monte um gabarito no formato de
+> [`golden-questions.example.json`](reports/golden-questions.example.json) sobre o seu próprio
+> código e rode o harness. É a única medição que responde a pergunta que importa pra você.
 
 ### Os três caminhos do mesmo motor (25/08/2026)
 

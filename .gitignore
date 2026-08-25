@@ -20,3 +20,7 @@ reports/recall.md
 # its own, in a repo whose whole design rule is "carries nothing personal". Same file, same
 # code, different repo, different answer.
 .rewrite-cache.json
+
+# lista de padroes PESSOAIS do vigia (nome, projetos privados). Nunca versionar:
+# era exatamente isso que estava em texto puro dentro do scan-pessoal.mjs ate 25/08.
+.scan-pessoal.local.json

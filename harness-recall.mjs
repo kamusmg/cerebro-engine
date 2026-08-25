@@ -22,7 +22,23 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const REPO = import.meta.dirname;
-const golden = JSON.parse(fs.readFileSync(path.join(REPO, 'reports', 'golden-questions.json'), 'utf8'));
+// The golden set is the author's and is NOT shipped: the questions point at private repos, so
+// publishing them would leak exactly what this repo takes care not to leak. That makes the
+// published numbers reproducible by the author, not by you — the README says so plainly.
+//
+// What you CAN do is build your own: `reports/golden-questions.example.json` has the shape.
+// A bare read here gave a raw ENOENT stack trace instead of that sentence.
+const GOLDEN = path.join(REPO, 'reports', 'golden-questions.json');
+let golden;
+try {
+  golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
+} catch (e) {
+  const falta = e.code === 'ENOENT';
+  console.error(falta
+    ? `reports/golden-questions.json not found.\n\nThis file is not shipped — the author's questions point at private repos. To measure\nyour own engine, build a set with the shape of reports/golden-questions.example.json:\neach entry needs { projeto, pergunta, alvos: ["file-that-should-be-found.js"] }.`
+    : `golden-questions.json could not be parsed: ${e.message}`);
+  process.exit(1);
+}
 
 const SRC_RE = /^NODE .+? \[src=(.+?) loc=/;
 

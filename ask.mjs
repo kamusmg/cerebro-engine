@@ -33,7 +33,21 @@ import { fileURLToPath } from 'node:url';
 import { consultar, formata, resumoAmplo } from './retrieval.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const projetos = JSON.parse(readFileSync(join(ROOT, 'projects.json'), 'utf8'));
+// FIRST RUN (2026-08-25). This used to be a bare read, so a fresh clone answered
+// `node ask.mjs --lista` with a raw ENOENT stack trace from node:fs — a wall of internals
+// that says nothing about the one thing the user has to do. `mcp-server.mjs` in this same
+// repo already handled it kindly; the CLI, which is what a stranger touches first, did not.
+// Crashing is fine. Crashing without saying what to do is not.
+let projetos;
+try {
+  projetos = JSON.parse(readFileSync(join(ROOT, 'projects.json'), 'utf8'));
+} catch (e) {
+  const falta = e.code === 'ENOENT';
+  console.error(falta
+    ? `projects.json not found.\n\n  cp projects.example.json projects.json\n\nThen list your repos in it — "name" plus the ABSOLUTE path to the project root.`
+    : `projects.json could not be parsed: ${e.message}`);
+  process.exit(1);
+}
 
 const [pergunta, alvo, ...resto] = process.argv.slice(2);
 

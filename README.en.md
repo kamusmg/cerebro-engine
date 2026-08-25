@@ -69,7 +69,17 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 | **+ BM25 with prefix matching** | **20/24** | 18/24 | **0.693** |
 
 The 4 residual misses are **coverage** (Arduino/`.ino` symbols the parser doesn't extract), **not**
-retrieval. On targets that exist in the graph: **20/20**. Reproduce with `node harness-recall.mjs`.
+retrieval. On targets that exist in the graph: **20/20**.
+
+> 🔴 **YOU CANNOT REPRODUCE THESE NUMBERS, and you deserve to know that before trusting them.**
+> Until 2026-08-25 this line said *"reproduce with `node harness-recall.mjs`"* — and you could
+> not: the golden set points at the author's **private** repositories, so shipping it would leak
+> precisely what this repo is careful not to leak. The harness is here, the method is described,
+> the numbers are reproducible **by the author** — and to you they are his word.
+>
+> What you can do is measure **yours**: build a set in the shape of
+> [`golden-questions.example.json`](reports/golden-questions.example.json) over your own code
+> and run the harness. That is the only measurement that answers the question you actually have.
 ### The three paths of the same engine (2026-08-25)
 
 The table above measures **one** path. The engine is used through three different doors, and
