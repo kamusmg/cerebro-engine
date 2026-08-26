@@ -112,13 +112,30 @@ const hash = (s) => {
 };
 
 // ---------- query-rewrite: a ponte semântica PT→EN (Gemini free, cacheado, com fallback) ----------
+// "NÃO EXISTE" E "EXISTE QUEBRADO" SÃO RESULTADOS DIFERENTES (2026-08-26). Este helper devolvia o
+// padrão nos dois casos, e quem paga a conta é o cache de rewrite logo abaixo: um
+// `.rewrite-cache.json` corrompido virava `{}`, a pergunta caía no caminho `sem-termos` — o
+// amputado — e o motor respondia pior sem dizer por quê. Numa medição a guarda de amputação pega e
+// tira a pergunta do agregado; em produção não há guarda nenhuma, e o silêncio é justamente o
+// defeito que esta casa persegue. Ausência segue MUDA, porque é o estado normal de quem nunca
+// rodou; ilegível GRITA, e ainda assim devolve o padrão — o cache é atalho, não pode derrubar a
+// pergunta.
 /**
  * @template T
  * @param {string} f
  * @param {T} padrao
  * @returns {T}
  */
-const leJson = (f, padrao) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return padrao; } };
+const leJson = (f, padrao) => {
+  try {
+    return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code !== 'ENOENT') {
+      process.stderr.write(`[cerebro-engine] aviso: ${path.basename(f)} existe mas não pôde ser lido (${/** @type {Error} */ (e).message}) — seguindo sem ele\n`);
+    }
+    return padrao;
+  }
+};
 
 /**
  * @param {string} pergunta
