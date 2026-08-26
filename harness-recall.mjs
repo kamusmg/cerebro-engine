@@ -28,17 +28,35 @@ const REPO = import.meta.dirname;
 //
 // What you CAN do is build your own: `reports/golden-questions.example.json` has the shape.
 // A bare read here gave a raw ENOENT stack trace instead of that sentence.
-const GOLDEN = path.join(REPO, 'reports', 'golden-questions.json');
+//
+// UMA RÉGUA POR VEZ, E ELA SE IDENTIFICA JUNTO DO NÚMERO (2026-08-26). A versão anterior caía em
+// cascata — gabarito do autor → sintético → exemplo — e avisava qual usou num rótulo ACIMA da
+// tabela. Só que a linha do AGREGADO saía idêntica nos três casos, e é ela que a gente copia pro
+// relatório e pra memória. Medidor que troca de régua sozinho não mede: produz números que parecem
+// da mesma série histórica e não são. Agora é explícito (`--golden`) ou o do autor, nada de
+// fallback — e o nome da régua vai colado no agregado, onde ninguém consegue copiar sem levar.
+const args = process.argv.slice(2);
+const iGolden = args.indexOf('--golden');
+if (iGolden >= 0 && !args[iGolden + 1]) {
+  console.error('--golden precisa do caminho: node harness-recall.mjs --golden <arquivo.json>');
+  process.exit(1);
+}
+const GOLDEN = iGolden >= 0
+  ? path.resolve(args[iGolden + 1])
+  : path.join(REPO, 'reports', 'golden-questions.json');
+
 let golden;
 try {
   golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
 } catch (e) {
-  const falta = e.code === 'ENOENT';
-  console.error(falta
-    ? `reports/golden-questions.json not found.\n\nThis file is not shipped — the author's questions point at private repos. To measure\nyour own engine, build a set with the shape of reports/golden-questions.example.json:\neach entry needs { projeto, pergunta, alvos: ["file-that-should-be-found.js"] }.`
-    : `golden-questions.json could not be parsed: ${e.message}`);
+  // "não achei" e "achei quebrado" são resultados diferentes e recebem mensagens diferentes.
+  console.error(e.code === 'ENOENT'
+    ? `${path.relative(REPO, GOLDEN)} not found.\n\nThis file is not shipped — the author's questions point at private repos. To measure\nyour own engine, build a set with the shape of reports/golden-questions.example.json:\neach entry needs { projeto, pergunta, alvos: ["file-that-should-be-found.js"] }.\nThen run: node harness-recall.mjs --golden <your-file.json>`
+    : `${path.relative(REPO, GOLDEN)} could not be parsed: ${e.message}`);
   process.exit(1);
 }
+
+const relGolden = path.relative(REPO, GOLDEN);
 
 const SRC_RE = /^NODE .+? \[src=(.+?) loc=/;
 
@@ -154,16 +172,18 @@ for (const q of golden) {
 }
 
 const N = golden.length;
-console.log(`\nRECALL — ${N} perguntas do gabarito (ground truth por grep no repo mapeado)\n`);
-const col = (m) => !m ? '     ' : m.erro ? 'ERRO       ' : `${m.recall ? '✓' : '·'}${m.hit3 ? '³' : ' '} r${m.rr.toFixed(2)}`;
+console.log(`\nRECALL — ${N} perguntas do gabarito [${relGolden}] (ground truth por grep no repo mapeado)\n`);
+const col = (m) => !m ? '     ' : m.erro ? 'ERRO       ' : m.amputada ? 'AMPUTADA   ' : `${m.recall ? '✓' : '·'}${m.hit3 ? '³' : ' '} r${(m.rr ?? 0).toFixed(2)}`;
 console.log('projeto        pergunta                                  ' + motores.map(([n]) => n.padEnd(12)).join(''));
 for (const r of linhas) {
   console.log(r.projeto.padEnd(14) + ' ' + r.pergunta.padEnd(42) + motores.map(([n]) => col(r[n]).padEnd(12)).join(''));
 }
-console.log('\nAGREGADO:');
+// A régua vai COLADA no agregado, não num rótulo lá em cima: é esta linha que a gente copia pro
+// relatório e pra memória, e um número sem a régua ao lado não pertence a série nenhuma.
+console.log(`\nAGREGADO [régua: ${relGolden}]:`);
 for (const [nome] of motores) {
   const a = acc[nome];
-  const validas = N - a.erros;
+  const validas = N - a.erros - a.amputadas;
   console.log(`  ${nome.padEnd(10)} recall ${a.recall}/${validas} · hit@3 ${a.hit3}/${validas} · MRR ${(a.rr / (validas || 1)).toFixed(3)} · nós/pergunta ${(a.nos / (validas || 1)).toFixed(1)}`);
   if (a.aposentadas) {
     const vivas = validas - a.aposentadas;
@@ -174,4 +194,5 @@ for (const [nome] of motores) {
   const proc = Object.entries(a.origens).map(([k, v]) => `${k} ${v}`).join(' · ');
   if (proc) console.log(`  ${' '.repeat(10)} rewrite: ${proc}`);
   if (a.erros) console.log(`  ${' '.repeat(10)} ⚠ ${a.erros} pergunta(s) NÃO RODARAM (erro do motor) — fora do agregado`);
+  if (a.amputadas) console.log(`  ${' '.repeat(10)} ~ ${a.amputadas} pergunta(s) AMPUTADAS (sem termos/cache) — fora do agregado`);
 }
