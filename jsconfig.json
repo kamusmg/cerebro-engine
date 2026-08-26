@@ -7,9 +7,12 @@
     "strict": true,
     "noEmit": true,
     "allowJs": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
   "include": [
+    "setup.mjs",
     "retrieval.mjs",
     "mcp-server.mjs",
     "ask.mjs",

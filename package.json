@@ -8,6 +8,7 @@
     "cerebro-mcp": "mcp-server.mjs"
   },
   "scripts": {
+    "setup": "node setup.mjs",
     "ask": "node ask.mjs",
     "mcp": "node mcp-server.mjs",
     "golden": "node generate-golden.mjs",

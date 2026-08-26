@@ -165,15 +165,30 @@ than no summary at all.
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
 cd cerebro-engine
-cp projects.example.json projects.json      # list YOUR repos: { name, root }
-
-# build a graph per repo (graphify does the indexing)
-graphify update "/absolute/path/to/my-backend"
-
-# ask
-node ask.mjs "where is the auth token validated" my-backend --termos "auth,token,validate"
-node ask.mjs --lista                          # projects that already have a graph
+node setup.mjs /absolute/path/to/my-backend
 ```
+
+That's it. `setup.mjs` checks Node, installs graphify if it's missing, registers the repo, indexes
+it, and **asks a real question** to prove it works — printing the nodes that came back. If any step
+fails it tells you **which one** and what to do; if it cannot *verify* a step, it says that too,
+with a `?`, instead of pretending it succeeded.
+
+Running it again is safe: it won't duplicate the entry or reindex for nothing.
+
+<details>
+<summary>Prefer to do it by hand?</summary>
+
+```bash
+cp projects.example.json projects.json      # list YOUR repos: { name, root }
+graphify update "/absolute/path/to/my-backend"   # graphify does the indexing
+node ask.mjs "where is the token validated" my-backend --termos "auth,token,validate"
+node ask.mjs --lista                        # projects that already have a graph
+```
+
+If `graphify` isn't on your PATH after installing (common on Windows), point at it directly:
+`GRAPHIFY_BIN=/full/path/to/graphify`.
+
+</details>
 
 > ⚠️ **On first use, pass `--termos`.** The translation cache (`.rewrite-cache.json`) **does not ship
 > with the clone** — it holds identifiers from the author's projects, so git ignores it. In a fresh
