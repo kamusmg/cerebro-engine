@@ -6,6 +6,7 @@ projects.json
 # ephemeral local caches / artifacts
 graphify-out/
 reports/golden-questions.json
+reports/golden-questions.synthetic.json
 reports/recall.md
 
 # .rewrite-cache.json — SAME FILE, OPPOSITE NATURE IN THE TWO REPOS (2026-08-04).

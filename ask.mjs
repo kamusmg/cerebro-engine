@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 // ask.mjs — ask the code graph of ANY project, from any folder.
 //
 // Why it exists: your agent's session may open anywhere, and `graphify query` looks for
@@ -32,16 +33,24 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { consultar, formata, resumoAmplo } from './retrieval.mjs';
 
+/**
+ * @typedef {import('./types.d.ts').ProjectConfig} ProjectConfig
+ * @typedef {import('./types.d.ts').QueryResult} QueryResult
+ * @typedef {import('./types.d.ts').ConsultarOptions} ConsultarOptions
+ */
+
 const ROOT = dirname(fileURLToPath(import.meta.url));
 // FIRST RUN (2026-08-25). This used to be a bare read, so a fresh clone answered
 // `node ask.mjs --lista` with a raw ENOENT stack trace from node:fs — a wall of internals
 // that says nothing about the one thing the user has to do. `mcp-server.mjs` in this same
 // repo already handled it kindly; the CLI, which is what a stranger touches first, did not.
 // Crashing is fine. Crashing without saying what to do is not.
+/** @type {ProjectConfig[]} */
 let projetos;
 try {
   projetos = JSON.parse(readFileSync(join(ROOT, 'projects.json'), 'utf8'));
-} catch (e) {
+} catch (err) {
+  const e = /** @type {NodeJS.ErrnoException} */ (err);
   const falta = e.code === 'ENOENT';
   console.error(falta
     ? `projects.json not found.\n\n  cp projects.example.json projects.json\n\nThen list your repos in it — "name" plus the ABSOLUTE path to the project root.`
@@ -129,7 +138,8 @@ try {
   const res = await consultar({ grafoPath: grafo, raiz: achado.root, pergunta, termos, semRewrite: resto.includes('--sem-rewrite') });
   console.log(formata(res, achado.name));
   console.log(`[grafo de ${achado.name} — o arquivo é a verdade, confirme antes de editar]`);
-} catch (e) {
+} catch (err) {
+  const e = /** @type {Error} */ (err);
   console.error(`query falhou: ${e.message}`);
   process.exit(1);
 }
