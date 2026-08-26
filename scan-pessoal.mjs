@@ -36,7 +36,7 @@
 // "não tenho a lista" e "a lista não achou nada" são resultados diferentes.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -82,8 +82,24 @@ if (existsSync(LOCAL)) {
 //
 // `--cached --others --exclude-standard` = rastreados + novos que NÃO estão no .gitignore, ou
 // seja, precisamente o que um `git add -A` levaria.
-const rastreados = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' })
-  .split('\n').filter(Boolean);
+const raiz = resolve(AQUI);
+if (!existsSync(raiz)) {
+  console.error(`!! diretório raiz inválido ou inexistente: ${AQUI}`);
+  process.exit(1);
+}
+
+let rastreados = [];
+try {
+  rastreados = execFileSync('git', ['-C', raiz, 'ls-files', '--cached', '--others', '--exclude-standard'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 15_000,
+    windowsHide: true,
+  }).split('\n').filter(Boolean);
+} catch (e) {
+  console.error(`!! falha ao executar git ls-files em ${raiz} (${e.message})`);
+  process.exit(1);
+}
 
 let achados = 0;
 
@@ -94,8 +110,9 @@ for (const arq of rastreados) {
   let texto;
   // Ilegível é FALHA, não "pula": um binário disfarçado passaria batido, e o silêncio aqui
   // é exatamente o defeito que este script existe pra impedir.
-  try { texto = readFileSync(arq, 'utf8'); } catch (e) {
-    console.error(`?? ${arq}: não consegui ler (${e.code}) — confira à mão`);
+  const caminhoCompleto = join(raiz, arq);
+  try { texto = readFileSync(caminhoCompleto, 'utf8'); } catch (e) {
+    console.error(`?? ${arq}: não consegui ler (${e.code ?? e.message}) — confira à mão`);
     achados++;
     continue;
   }

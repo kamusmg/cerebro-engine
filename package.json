@@ -10,11 +10,32 @@
   "scripts": {
     "ask": "node ask.mjs",
     "mcp": "node mcp-server.mjs",
-    "bench": "node harness-recall.mjs"
+    "golden": "node generate-golden.mjs",
+    "bench": "node harness-recall.mjs",
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p jsconfig.json --noEmit"
   },
-  "keywords": ["code-search", "code-graph", "rag", "retrieval", "ai-tools", "mcp", "tree-sitter", "llm"],
-  "engines": { "node": ">=22" },
+  "keywords": [
+    "code-search",
+    "code-graph",
+    "rag",
+    "retrieval",
+    "ai-tools",
+    "mcp",
+    "tree-sitter",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/kamusmg/cerebro-engine" },
-  "author": "kamusmg"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamusmg/cerebro-engine"
+  },
+  "author": "kamusmg",
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^7.0.2"
+  }
 }

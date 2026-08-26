@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 // retrieval.mjs — o motor de recuperação PRÓPRIO do cérebro.
 //
 // Por que existe (medido em 18/07): o `graphify query` escolhe o seed por casamento
@@ -25,7 +26,18 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const REPO = import.meta.dirname;
+/**
+ * @typedef {import('./types.d.ts').Node} Node
+ * @typedef {import('./types.d.ts').Link} Link
+ * @typedef {import('./types.d.ts').RawGraph} RawGraph
+ * @typedef {import('./types.d.ts').GraphSeedInput} GraphSeedInput
+ * @typedef {import('./types.d.ts').Graph} Graph
+ * @typedef {import('./types.d.ts').RewriteResult} RewriteResult
+ * @typedef {import('./types.d.ts').QueryResult} QueryResult
+ * @typedef {import('./types.d.ts').ConsultarOptions} ConsultarOptions
+ */
+
+const REPO = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
 const REWRITE_CACHE = path.join(REPO, '.rewrite-cache.json');
 
 const K_RRF = 60;          // constante canônica do Reciprocal Rank Fusion (Cormack 2009)
@@ -60,12 +72,27 @@ const MIN_IDENT    = Number(process.env.CEREBRO_MIN_IDENT    ?? 8);   // tamanho
 const W_RECENTE    = Number(process.env.CEREBRO_W_RECENTE    ?? 3);   // file touched in git in the last 30 days
 
 // ---------- utilidades de texto ----------
-const semAcento = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-const normaliza = (s) => semAcento(String(s).toLowerCase());
+/**
+ * @param {unknown} s
+ * @returns {string}
+ */
+const semAcento = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/**
+ * @param {unknown} s
+ * @returns {string}
+ */
+const normaliza = (s) => semAcento(String(s ?? '')).toLowerCase();
+
 // quebra identificador em palavras: split_string / splitString / split-string → [split,string]
 // ATENÇÃO: o split de camelCase tem que vir ANTES do lowercase, senão "magneticButtonEffect"
 // vira o blob "magneticbuttoneffect" e não casa com "setupMagnetic" (bug medido em 18/07-6:15).
+/**
+ * @param {unknown} s
+ * @returns {string[]}
+ */
 function tokens(s) {
+  if (s === null || s === undefined) return [];
   return semAcento(String(s))
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
@@ -74,6 +101,10 @@ function tokens(s) {
 }
 
 // ---------- FNV-1a (mesmo hash barato do resto do cérebro) ----------
+/**
+ * @param {string} s
+ * @returns {string}
+ */
 const hash = (s) => {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
@@ -81,8 +112,19 @@ const hash = (s) => {
 };
 
 // ---------- query-rewrite: a ponte semântica PT→EN (Gemini free, cacheado, com fallback) ----------
+/**
+ * @template T
+ * @param {string} f
+ * @param {T} padrao
+ * @returns {T}
+ */
 const leJson = (f, padrao) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return padrao; } };
 
+/**
+ * @param {string} pergunta
+ * @param {string[]|undefined} [termosDoChamador]
+ * @returns {Promise<RewriteResult>}
+ */
 async function reescreve(pergunta, termosDoChamador) {
   // BASELINE SWITCH (2026-08-04): turn this arm off to measure what it actually buys. House
   // rule — every heuristic has to beat its own ABSENCE. Without a switch that comparison never
@@ -104,6 +146,7 @@ async function reescreve(pergunta, termosDoChamador) {
   // `if (!KEY) return`, the engine with no key returned ZERO seeds even with the answer on
   // disk — 22 nodes → 0 on the same question. That order punished exactly whoever needed it
   // most.
+  /** @type {Record<string, string[]>} */
   const cache = leJson(REWRITE_CACHE, {});
   const chave = hash(normaliza(pergunta));
 
@@ -147,19 +190,38 @@ async function reescreve(pergunta, termosDoChamador) {
 }
 
 // ---------- carga do grafo ----------
+/**
+ * @param {string} grafoPath
+ * @returns {Graph}
+ */
 function carregaGrafo(grafoPath) {
+  /** @type {RawGraph} */
   const g = JSON.parse(fs.readFileSync(grafoPath, 'utf8'));
   const nodes = g.nodes ?? [];
   const links = g.links ?? [];
+  /** @type {Map<string, Node>} */
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
+  /** @type {Map<string, Set<string>>} */
   const adj = new Map();          // adjacência não-direcionada (alcance no BFS)
+  /** @type {Map<string, number>} */
   const refCount = new Map();     // grau do nó → damping do aider (sqrt)
+  /** @type {Map<string, string[]>} */
   const rationaleDe = new Map();  // símbolo → prosa das docstrings/comentários ligadas
+  /** @type {Map<string, Set<string>>} */
   const arquivosDoToken = new Map(); // identificador → conjunto de arquivos que o definem
+  /** @type {Map<string, string>} */
   const relEntre = new Map();     // "src\0tgt" → relação (direção original) — evita varrer todas as arestas no formata
 
-  const liga = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
+  /**
+   * @param {string} a
+   * @param {string} b
+   */
+  const liga = (a, b) => {
+    let setA = adj.get(a);
+    if (!setA) { setA = new Set(); adj.set(a, setA); }
+    setA.add(b);
+  };
   for (const l of links) {
     const s = l.source, t = l.target;
     liga(s, t); liga(t, s);
@@ -169,15 +231,20 @@ function carregaGrafo(grafoPath) {
     // rationale_for: o nó-fonte é a prosa (docstring/comentário), o alvo é o símbolo
     if (l.relation === 'rationale_for') {
       const prosa = byId.get(s)?.label;
-      if (prosa) { if (!rationaleDe.has(t)) rationaleDe.set(t, []); rationaleDe.get(t).push(prosa); }
+      if (prosa) {
+        let arrT = rationaleDe.get(t);
+        if (!arrT) { arrT = []; rationaleDe.set(t, arrT); }
+        arrT.push(prosa);
+      }
     }
   }
   // quantos arquivos distintos "definem" cada identificador (aider: >5 = genérico, x0.1)
   for (const n of nodes) {
     if (n.file_type !== 'code' || !n.source_file) continue;
     const id = normaliza(n.label).replace(/\(\)$/, '');
-    if (!arquivosDoToken.has(id)) arquivosDoToken.set(id, new Set());
-    arquivosDoToken.get(id).add(n.source_file);
+    let arqs = arquivosDoToken.get(id);
+    if (!arqs) { arqs = new Set(); arquivosDoToken.set(id, arqs); }
+    arqs.add(n.source_file);
   }
   return { g, nodes, byId, adj, refCount, rationaleDe, arquivosDoToken, relEntre };
 }
@@ -208,10 +275,25 @@ const LEXICO_LEGADO = LEXICO === 'legado';
 
 // Plural é a mesma palavra pro nosso fim. Sem isto a tokenização estrita perde match que o
 // includes() acertava.
+/**
+ * @param {string} w
+ * @returns {string}
+ */
 const raiz = (w) => (w.length >= 4 && w.endsWith('s') ? w.slice(0, -1) : w);
+
+/**
+ * @param {string} termo
+ * @param {string} tokenDoc
+ * @returns {boolean}
+ */
 const casaPrefixo = (termo, tokenDoc) => tokenDoc === termo
   || (termo.length >= MIN_PREFIXO && tokenDoc.startsWith(termo));
 
+/**
+ * @param {Node} n
+ * @param {Map<string, string[]>} rationaleDe
+ * @returns {string}
+ */
 function partesBusca(n, rationaleDe) {
   return [n.label, n.norm_label, n.source_file ? path.basename(n.source_file) : '',
     n.community_name ?? '', ...(rationaleDe.get(n.id) ?? [])].filter(Boolean).join(' ');
@@ -221,6 +303,11 @@ function partesBusca(n, rationaleDe) {
 // cima do normalizado destrói o sinal antes de usá-lo — erro medido: `SomeConcatMode` chegava
 // como o blob `someconcatmode`, o termo `some` deixava de casar, e o recall caía. É o mesmo
 // bug de ordem já anotado dentro da própria tokens(), cometido de novo do outro lado.
+/**
+ * @param {Node} n
+ * @param {Map<string, string[]>} rationaleDe
+ * @returns {string}
+ */
 function textoBusca(n, rationaleDe) {
   const partes = [n.label, n.norm_label, n.source_file ? path.basename(n.source_file) : '',
     n.community_name ?? '', ...(rationaleDe.get(n.id) ?? [])];
@@ -228,12 +315,22 @@ function textoBusca(n, rationaleDe) {
 }
 
 // ---------- pontuação de seed, com o endurecimento do aider ----------
+/**
+ * @param {GraphSeedInput|Graph} G
+ * @param {string[]} termosPergunta
+ * @param {string[]} termosRewrite
+ * @returns {{ scoreLex: Map<string, number>, scoreRw: Map<string, number> }}
+ */
 function pontuaSeeds(G, termosPergunta, termosRewrite) {
   const { nodes, refCount, rationaleDe, arquivosDoToken } = G;
   // IDF barato: termo que casa em MUITOS nós vale menos — mata a dominância (a)
+  /** @type {Map<string, number>} */
   const docFreq = new Map();
+  /** @type {Map<string, string>} */
   const textos = new Map();   // legado: blob minúsculo
+  /** @type {Map<string, Map<string, number>>} */
   const tf = new Map();       // bm25: id → Map(termo da pergunta → frequência)
+  /** @type {Map<string, number>} */
   const tamDoc = new Map();   // bm25: id → nº de tokens
   let somaTam = 0;
 
@@ -259,6 +356,7 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
     somaTam += toks.length || 1;
     // cont é indexado pelo TERMO DA PERGUNTA (não pelo token do doc): no modo prefixo vários
     // tokens diferentes do documento podem satisfazer o mesmo termo.
+    /** @type {Map<string, number>} */
     const cont = new Map();
     for (const t of toks) {
       for (const termo of termosTodos) {
@@ -274,13 +372,19 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
   const tamMedio = somaTam / N || 1;
   // IDF do BM25 (Robertson). O +1 dentro do log impede idf negativo pra termo que aparece em
   // mais da metade do corpus.
+  /** @param {string} w */
   const idfBM = (w) => {
     const df = docFreq.get(w) ?? 0;
     return Math.log((N - df + 0.5) / (df + 0.5) + 1);
   };
+  /** @param {string} w */
   const idf = (w) => Math.log((N + 1) / ((docFreq.get(w) ?? 0) + 1)) + 1;
 
-  const scoreLex = new Map(), scoreRw = new Map();
+  /** @type {Map<string, number>} */
+  const scoreLex = new Map();
+  /** @type {Map<string, number>} */
+  const scoreRw = new Map();
+
   for (const n of nodes) {
     const tx = textos.get(n.id);
     const idNorm = normaliza(n.label).replace(/\(\)$/, '');
@@ -296,10 +400,14 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
     // sqrt damping: nó-hub (grau alto) não domina só por ser popular
     const damp = 1 / Math.sqrt(1 + (refCount.get(n.id) ?? 0));
 
+    /**
+     * @param {Map<string, number>} mapa
+     * @param {string[]} termos
+     */
     const acumula = (mapa, termos) => {
       let s = 0;
       if (LEXICO_LEGADO) {
-        for (const w of termos) if (tx.includes(w)) s += idf(w);
+        for (const w of termos) if (tx && tx.includes(w)) s += idf(w);
       } else {
         const cont = tf.get(n.id);
         const dl = tamDoc.get(n.id) ?? 1;
@@ -309,7 +417,7 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
         // mesmo nó. O `tf` já era indexado por raiz única (termosTodos, acima); só o laço de
         // score ficou de fora. Deduplicar aqui alinha os dois lados.
         for (const w of new Set(termos.map(raiz))) {
-          const f = cont.get(w) ?? 0;
+          const f = cont?.get(w) ?? 0;
           if (!f) continue;
           // BM25: saturação por k1 + normalização por tamanho por b
           s += idfBM(w) * (f * (BM25_K1 + 1)) / (f + BM25_K1 * (1 - BM25_B + BM25_B * dl / tamMedio));
@@ -324,18 +432,32 @@ function pontuaSeeds(G, termosPergunta, termosRewrite) {
 }
 
 // ranking → rank 1-based (pra RRF)
+/**
+ * @param {Map<string, number>} mapa
+ * @returns {Map<string, number>}
+ */
 const rankeia = (mapa) => {
   const ord = [...mapa.entries()].sort((a, b) => b[1] - a[1]);
+  /** @type {Map<string, number>} */
   const rank = new Map();
   ord.forEach(([id], i) => rank.set(id, i + 1));
   return rank;
 };
 
 // BFS próprio a partir dos seeds — devolve id→distância(saltos) mínima
+/**
+ * @param {Graph} G
+ * @param {string[]} seeds
+ * @param {number} depth
+ * @param {number} cap
+ * @returns {Map<string, number>}
+ */
 function bfs(G, seeds, depth, cap) {
+  /** @type {Map<string, number>} */
   const dist = new Map(seeds.map((id) => [id, 0]));
   let fronteira = [...seeds];
   for (let d = 1; d <= depth && dist.size < cap; d++) {
+    /** @type {string[]} */
     const prox = [];
     for (const id of fronteira) {
       for (const viz of G.adj.get(id) ?? []) {
@@ -349,8 +471,15 @@ function bfs(G, seeds, depth, cap) {
 }
 
 // ---------- a consulta ----------
-export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite = false }) {
-  const G = carregaGrafo(grafoPath);
+/**
+ * @param {ConsultarOptions} options
+ * @returns {Promise<QueryResult>}
+ */
+export async function consultar({ grafoPath, raiz: raizDir, pergunta, termos, semRewrite = false, grafo }) {
+  if (!grafo && !grafoPath) {
+    throw new Error('consultar requires either "grafo" or "grafoPath"');
+  }
+  const G = grafo ?? carregaGrafo(/** @type {string} */ (grafoPath));
   const termosPergunta = [...new Set(tokens(pergunta))];
   const rw = semRewrite ? { termos: [], origem: 'desligado' } : await reescreve(pergunta, termos);
   const termosRewrite = [...new Set(rw.termos.flatMap((t) => tokens(t)))];
@@ -358,6 +487,7 @@ export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite 
   const { scoreLex, scoreRw } = pontuaSeeds(G, termosPergunta, termosRewrite);
 
   // seeds = melhores dos dois braços léxicos juntos
+  /** @type {Map<string, number>} */
   const somaSeed = new Map();
   for (const [id, s] of scoreLex) somaSeed.set(id, (somaSeed.get(id) ?? 0) + s);
   for (const [id, s] of scoreRw) somaSeed.set(id, (somaSeed.get(id) ?? 0) + s);
@@ -366,16 +496,21 @@ export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite 
   const dist = bfs(G, seeds, DEPTH, CAP_NOS);
 
   // braço-grafo: quem o BFS alcançou, mais perto = melhor
+  /** @type {Map<string, number>} */
   const scoreGrafo = new Map();
   for (const [id, d] of dist) scoreGrafo.set(id, 1 / (1 + d));
 
   // RRF k=60 sobre os três braços (léxico + rewrite + grafo)
   const rkLex = rankeia(scoreLex), rkRw = rankeia(scoreRw), rkGr = rankeia(scoreGrafo);
   const candidatos = new Set([...scoreLex.keys(), ...scoreRw.keys(), ...scoreGrafo.keys()]);
+  /** @type {Map<string, number>} */
   const rrf = new Map();
   for (const id of candidatos) {
     let s = 0;
-    for (const rk of [rkLex, rkRw, rkGr]) if (rk.has(id)) s += 1 / (K_RRF + rk.get(id));
+    for (const rk of [rkLex, rkRw, rkGr]) {
+      const rkVal = rk.get(id);
+      if (rkVal !== undefined) s += 1 / (K_RRF + rkVal);
+    }
     rrf.set(id, s);
   }
 
@@ -383,17 +518,40 @@ export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite 
   // Recência por CAMINHO COMPLETO, não basename: casar só "utils.py" daria o bônus ×50 a TODO
   // utils.py/index.js/__init__.py do repo (Next/Django) e coroaria o arquivo errado. git e o
   // source_file do graphify são ambos relativos à raiz — normaliza a barra e casa exato.
+  /** @param {string} p */
   const norm = (p) => p.replace(/\\/g, '/').replace(/^\.\//, '');
+  /** @type {Set<string>} */
   let recentes = new Set();
-  try {
-    recentes = new Set(execFileSync('git', ['-C', raiz, 'log', '--since=30.days', '--name-only', '--format='],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').filter(Boolean).map((f) => norm(f.trim())));
-  } catch { /* sem git = sem recência */ }
+  if (typeof raizDir === 'string' && raizDir.trim() && !raizDir.trim().startsWith('-')) {
+    const raizResolvida = path.resolve(raizDir.trim());
+    if (fs.existsSync(raizResolvida) && fs.statSync(raizResolvida).isDirectory()) {
+      try {
+        recentes = new Set(
+          execFileSync('git', ['-C', raizResolvida, 'log', '--since=30.days', '--name-only', '--format='], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 15_000,
+            windowsHide: true,
+          })
+            .split('\n')
+            .filter(Boolean)
+            .map((f) => norm(f.trim()))
+        );
+      } catch (err) {
+        const e = /** @type {Error} */ (err);
+        // sem git ou erro no log = sem recência; registra em stderr para observabilidade
+        process.stderr.write(`[cerebro-engine] aviso: falha ao obter histórico git em ${raizResolvida} (${e.message})\n`);
+      }
+    } else {
+      process.stderr.write(`[cerebro-engine] aviso: raiz informada não é diretório válido: ${raizDir}\n`);
+    }
+  }
 
   // Recência do git (x50) entra SÓ na escolha do arquivo, não no sort dos nós — medido em
   // 18/07: reforçar o nó com x10/x50 no sort final OVERFITTOU e enterrou o alvo (MRR 0.58→0.52).
   // RRF puro dentro dos arquivos recentes-selecionados foi estritamente melhor (recall 8/8,
   // hit@3 6/8). Lição: menos tempero, mais fusão.
+  /** @type {Map<string, number>} */
   const scoreArquivo = new Map();
   for (const [id, s] of rrf) {
     const src = G.byId.get(id)?.source_file; if (!src) continue;
@@ -403,10 +561,15 @@ export async function consultar({ grafoPath, raiz, pergunta, termos, semRewrite 
   const topArquivos = new Set([...scoreArquivo.entries()].sort((a, b) => b[1] - a[1])
     .slice(0, MAX_ARQUIVOS).map(([f]) => f));
 
-  const escolhidos = [...candidatos]
-    .map((id) => G.byId.get(id))
-    .filter((n) => n && n.source_file && topArquivos.has(n.source_file) && n.file_type !== 'rationale')
-    .sort((a, b) => (rrf.get(b.id) ?? 0) - (rrf.get(a.id) ?? 0));
+  /** @type {Node[]} */
+  const escolhidos = [];
+  for (const id of candidatos) {
+    const node = G.byId.get(id);
+    if (node && node.source_file && topArquivos.has(node.source_file) && node.file_type !== 'rationale') {
+      escolhidos.push(node);
+    }
+  }
+  escolhidos.sort((a, b) => (rrf.get(b.id) ?? 0) - (rrf.get(a.id) ?? 0));
 
   return { G, escolhidos, seeds, rw, dist, rrf, totalArquivos: scoreArquivo.size };
 }
@@ -438,27 +601,57 @@ export const AMPLA = new RegExp(
 const TEM_ALVO = /[a-z0-9]_[a-z0-9]|[a-z][A-Z]|\.\w{1,4}\b|\(\)|\b[A-Z]{3,}\b/;
 
 // devolve o resumo cacheado do projeto, ou null (pergunta específica, ou projeto sem resumo)
+/**
+ * @param {string} pergunta
+ * @param {string} nomeProjeto
+ * @param {boolean} [forcado]
+ * @returns {string | null}
+ */
 export function resumoAmplo(pergunta, nomeProjeto, forcado = false) {
   if (!forcado && (!AMPLA.test(pergunta) || TEM_ALVO.test(pergunta))) return null;
+  if (!nomeProjeto || typeof nomeProjeto !== 'string') return null;
+
+  // Sanitização rigorosa contra Path Traversal:
+  // 1. Rejeita separadores de caminho, referências relativas (.. ou .) e caracteres fora do padrão de identificador seguro
+  const nomeLimpo = path.basename(nomeProjeto.trim());
+  if (nomeLimpo !== nomeProjeto.trim() || nomeLimpo === '.' || nomeLimpo === '..' || !/^[a-zA-Z0-9._-]+$/.test(nomeLimpo)) {
+    return null;
+  }
+
+  // 2. Garante confinamento estrito dentro do diretório resumos/
   // fileURLToPath e não .pathname: o caminho de instalação pode ter espaço, e o pathname cru
   // devolve %20 (e "/D:/..." no Windows) — o existsSync falharia CALADO e a pergunta ampla
   // voltaria a cair na travessia cara sem ninguém perceber.
-  const f = path.join(path.dirname(fileURLToPath(import.meta.url)), 'resumos', `${nomeProjeto}.md`);
+  const baseDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'resumos');
+  const f = path.resolve(baseDir, `${nomeLimpo}.md`);
+  if (!f.startsWith(baseDir + path.sep)) return null;
   if (!fs.existsSync(f)) return null;
-  // AGE COMES ALONG (2026-08-04). The generator for these summaries (resumo-projetos.mjs) was
-  // deleted along with the Gemini dependency, so they no longer refresh — they freeze on the day
-  // they were born. A stale summary presented as if it were current is the project's cardinal
-  // sin wearing new clothes: not "couldn't find out," but "answered wrong, silently." With the
-  // date and age in plain sight, the reader decides whether to trust it or ask the graph a
-  // specific question instead (which is live).
-  const dias = Math.floor((Date.now() - fs.statSync(f).mtimeMs) / 86400000);
-  const aviso = dias >= 30
-    ? `⚠️  resumo CONGELADO há ${dias} dias e sem gerador — trate como histórico, não como estado atual`
-    : `resumo cacheado de ${nomeProjeto} (${dias}d)`;
-  return `${fs.readFileSync(f, 'utf8')}\n[${aviso} — pra detalhe atual, faça uma pergunta específica ao grafo]`;
+
+  try {
+    // AGE COMES ALONG (2026-08-04). The generator for these summaries (resumo-projetos.mjs) was
+    // deleted along with the Gemini dependency, so they no longer refresh — they freeze on the day
+    // they were born. A stale summary presented as if it were current is the project's cardinal
+    // sin wearing new clothes: not "couldn't find out," but "answered wrong, silently." With the
+    // date and age in plain sight, the reader decides whether to trust it or ask the graph a
+    // specific question instead (which is live).
+    const dias = Math.floor((Date.now() - fs.statSync(f).mtimeMs) / 86400000);
+    const aviso = dias >= 30
+      ? `⚠️  resumo CONGELADO há ${dias} dias e sem gerador — trate como histórico, não como estado atual`
+      : `resumo cacheado de ${nomeLimpo} (${dias}d)`;
+    return `${fs.readFileSync(f, 'utf8')}\n[${aviso} — pra detalhe atual, faça uma pergunta específica ao grafo]`;
+  } catch (err) {
+    const e = /** @type {Error} */ (err);
+    process.stderr.write(`[cerebro-engine] aviso: falha ao ler resumo ${f} (${e.message})\n`);
+    return null;
+  }
 }
 
 // formata igual à saída do graphify (NODE/EDGE) pra medição e leitura continuarem valendo
+/**
+ * @param {QueryResult} res
+ * @param {string} [nomeProjeto]
+ * @returns {string}
+ */
 export function formata(res, nomeProjeto) {
   const { G, escolhidos, seeds, rw, totalArquivos } = res;
   const nomesSeed = seeds.map((id) => G.byId.get(id)?.label ?? id).slice(0, 5);
@@ -483,13 +676,41 @@ export function formata(res, nomeProjeto) {
   return linhas.join('\n');
 }
 
+export {
+  semAcento,
+  normaliza,
+  tokens,
+  hash,
+  reescreve,
+  carregaGrafo,
+  raiz,
+  casaPrefixo,
+  partesBusca,
+  textoBusca,
+  pontuaSeeds,
+  rankeia,
+  bfs,
+  K_RRF,
+  N_SEEDS,
+  DEPTH,
+  CAP_NOS,
+  MAX_ARQUIVOS,
+  W_GENERICO,
+  W_BEMNOMEADO,
+  MIN_IDENT,
+  W_RECENTE,
+  BM25_K1,
+  BM25_B,
+  MIN_PREFIXO,
+};
+
 // CLI direto (debug)
 // `?.` nos DOIS lados: importado como lib (node -e "await import(...)") não há argv[1], e a
 // primeira metade estourava TypeError antes da segunda, que já era segura.
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('retrieval.mjs')) {
-  const [pergunta, grafoPath, raiz] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+  const [pergunta, grafoPath, raizCli] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const semRewrite = process.argv.includes('--sem-rewrite');
   if (!pergunta || !grafoPath) { console.error('Uso: node retrieval.mjs "<pergunta>" <graph.json> [raiz] [--sem-rewrite]'); process.exit(1); }
-  const res = await consultar({ grafoPath, raiz: raiz ?? path.dirname(path.dirname(grafoPath)), pergunta, semRewrite });
+  const res = await consultar({ grafoPath, raiz: raizCli ?? path.dirname(path.dirname(grafoPath)), pergunta, semRewrite });
   console.log(formata(res, 'debug'));
 }
