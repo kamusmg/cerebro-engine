@@ -6,42 +6,31 @@
 
 ### Make your AI agent **ask the code graph** instead of blindly reading 30 files.
 
-A **local, free, measurable** retrieval layer over [graphify](https://github.com/safishamsi/graphify):
-it turns a natural-language question into the **handful of files that actually answer it** — fewer
-tokens, faster answers.
+A **local, free and measurable** retrieval layer on top of
+[graphify](https://github.com/safishamsi/graphify): it turns a natural-language question into the
+**few files that actually answer it** — fewer tokens, faster answer.
 
 [![Node](https://img.shields.io/badge/Node-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Free](https://img.shields.io/badge/cost-%240%20·%20local-brightgreen)]()
-[![Recall](https://img.shields.io/badge/recall-20%2F24%20measured-orange)]()
+[![Recall](https://img.shields.io/badge/recall-20%2F24%20measured-orange)](MEDICOES.en.md)
+[![made in](https://img.shields.io/badge/made%20in-🇧🇷%20Brazil-009c3b)]()
 
 <br>
 
-<img src="docs/demo.svg" alt="ask demo: a Portuguese question finds the right files" width="720">
+<img src="docs/demo.svg" alt="ask demo: a question in Portuguese finds the right files" width="720">
 
 </div>
 
 ---
 
-> **Honest positioning:** this does **not** promise "8x savings." It hands you the **method and the
-> harness** so you **measure the savings on your own code**. If the number looks too good, the method is
-> wrong — so the harness ships with it.
-
 ## 🎯 The problem
 
-An agent that opens 30 files to answer one question **burns tokens and time**. A code graph (tree-sitter
-symbols + Leiden communities, via graphify) turns *"where's the logic that keeps punctuation in
-subtitles?"* into a **pointer to the two files that matter**.
+An agent that opens 30 files to answer one question **burns tokens and time**. A code graph
+(tree-sitter symbols + Leiden communities, via graphify) turns *"where's the logic that keeps the
+punctuation in the subtitles?"* into a **pointer to the two files that matter**.
 
 The graph is the **index**; the file is the **truth** — always confirm in the real code before editing.
-
-## ✨ What it does
-
-| | |
-|---|---|
-| 🔎 **`ask.mjs`** | Question → the files/symbols that answer it. Hybrid retrieval: lexical + a **cross-language query-rewrite bridge** (ask in one language, code in another? it crosses that) + graph traversal, fused with **Reciprocal Rank Fusion** (k=60). |
-| ⚙️ **`retrieval.mjs`** | The engine: own seed selection over `graph.json` with aider-style hardening (`sqrt(refs)` so frequent symbols don't dominate, `×0.1` generic, `×10` well-named), own BFS, RRF. |
-| 📏 **`harness-recall.mjs`** | Measures **recall / hit@3 / MRR** on a golden set **you** build from your repos. |
 
 ## 💻 In practice
 
@@ -60,193 +49,118 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 
 *(illustrative output; the format is real)*
 
-## 📊 Measured — on TWO golden sets, one of them held out
+---
 
-| retriever | recall | hit@3 | MRR |
-|---|:---:|:---:|:---:|
-| graph BFS (baseline) | 15/24 | 14/24 | 0.529 |
-| hybrid + rewrite + RRF | 20/24 | **19/24** | 0.653 |
-| **+ BM25 with prefix matching** | **20/24** | 18/24 | **0.693** |
+## 🔬 How it works
 
-The 4 residual misses are **coverage** (Arduino/`.ino` symbols the parser doesn't extract), **not**
-retrieval. On targets that exist in the graph: **20/20**.
+```mermaid
+flowchart LR
+    Q["question<br/>(any language)"] --> S{seed selection}
+    S -->|BM25 + prefix| A[lexical arm]
+    S -->|caller-supplied<br/>terms| B[terms arm]
+    A --> BFS["own BFS<br/>2 hops · cap 60"]
+    B --> BFS
+    A --> RRF
+    B --> RRF
+    BFS -->|graph arm| RRF["Reciprocal Rank Fusion<br/>k=60"]
+    RRF --> F["file selection<br/>+ git recency ×3"]
+    F --> C["top-5 files<br/>that answer"]
+    style Q fill:#0a0f30,stroke:#39d353,color:#eee
+    style C fill:#16213e,stroke:#f0a13a,color:#eee
+    style RRF fill:#1a1a2e,stroke:#9d8cff,color:#eee
+```
 
-> 🔴 **YOU CANNOT REPRODUCE THESE NUMBERS, and you deserve to know that before trusting them.**
-> Until 2026-08-25 this line said *"reproduce with `node harness-recall.mjs`"* — and you could
-> not: the golden set points at the author's **private** repositories, so shipping it would leak
-> precisely what this repo is careful not to leak. The harness is here, the method is described,
-> the numbers are reproducible **by the author** — and to you they are his word.
->
-> What you can do is measure **yours**: build a set in the shape of
-> [`golden-questions.example.json`](reports/golden-questions.example.json) over your own code
-> and run the harness. That is the only measurement that answers the question you actually have.
-### The three paths of the same engine (2026-08-25)
+### 1. The map: what's inside `graph.json`
 
-The table above measures **one** path. The engine is used through three different doors, and
-until 2026-08-25 only the middle one had a number — which was quoted as if it described the
-first. All three are now measured side by side, in the same run:
+**graphify** does the indexing: it runs tree-sitter over the repository and writes a `graph.json` with
 
-| path | recall | hit@3 | MRR |
-|---|:---:|:---:|:---:|
-| `--termos` supplied by the caller | 20/24 | 17/24 | **0.701** |
-| rewrite-cache hit | **21/24** | 17/24 | 0.636 |
-| `--sem-rewrite` (no term arm) | 17/24 | 14/24 | 0.533 |
+- **nodes** — every function, class, method and file, with `label` (the symbol name), `source_file`,
+  `loc` (the line), and the Leiden community it belongs to;
+- **edges** — who calls whom, who imports whom, who defines what;
+- **`rationale` nodes** — docstrings and explanatory comments, linked to the symbol they describe.
+  They are what lets the prose of the code take part in the search.
 
-Two readings. **The term arm pays for itself**: 3 to 4 more answers found than the baseline, and
-+0.10 to +0.17 MRR. And the production path **trades one hit for a clearly better rank** — which
-makes sense, because whoever asks knows the conversation and picks better identifiers than a
-cache frozen weeks ago.
+This project **indexes nothing**: it only reads that file. That's why it costs $0 and runs offline.
 
-> ⚠️ **Measuring the first two paths together requires `CEREBRO_CACHE_RO=1`** (the harness sets
-> it). Without it, measuring the `--termos` path **writes the measurement's own terms into the
-> rewrite cache**, and the cache path then returns those same terms: both arms collapse into one
-> number and the older arm's baseline dies inside the measurement itself. This was caught
-> happening — the cache arm dropped from 21/24 · MRR 0.636 to exactly the other arm's figure,
-> which **reads like a finding and is an artifact**. The thermometer must not change the
-> temperature.
+### 2. Three arms, because none of them is enough alone
 
+The question becomes three ranked lists of candidate nodes, each with a different bias:
 
-> ⚠️ **Don't read this table without the composition of the golden set.** Most of these questions
-> fall in the regime where plain text search would already work, which inflates any aggregate number.
-> See [what these numbers do **not** prove](#-what-these-numbers-do-not-prove) before comparing
-> against your own.
-
-### The training set isn't enough — and here's the proof
-
-The 24 questions above are **training**: they and the tuning they justify were born together. So there
-is a second set, **built backwards on purpose** — the target is sampled mechanically (fixed seed)
-among documented nodes, and only **then** is the question written from what that code does. It has
-never been used to tune anything.
-
-**It rejected the first version of this very improvement.** Textbook BM25 with exact-token matching
-looked great on training (recall 20→**21**, MRR 0.653→**0.733** with a tuned `k1`) and collapsed on
-the held-out set (recall **11/14** vs 12/14 for the older code), with the tuned `k1` scoring
-*identically* to the default — the tuning bought nothing.
-
-The cause: the substring matching that the "fix" removed was working as an **accidental cross-lingual
-stemmer**. When questions are written in one language and identifiers are English, the question's word
-is often a **prefix** of its English cognate (`portugues` ⊂ `portuguese`). Hence the final design:
-BM25 with literature-default `k1`/`b`, and **prefix** matching.
-
-| | training (24) | held-out (14) | nodes/question |
-|---|---|---|---|
-| substring (previous) | MRR 0.653 | recall 12 · MRR 0.721 | 36.4 |
-| BM25 exact token | MRR 0.691 | recall **11** · MRR 0.693 | 34.6 |
-| **prefix + BM25 (default)** | MRR **0.693** | recall 12 · MRR **0.764** | **34.6** |
-
-A/B at any time: `CEREBRO_LEXICO=legado|bm25|prefixo`.
-
-### 🔴 Correction: the held-out column above was measured on a crippled engine
-
-The cross-language rewrite bridge is one call to a free-tier API. The quota had run out; the engine
-degraded to the lexical arm alone and **said so** (`rewrite=falhou`) — but the harness never read
-the warning and published the number as a property of the engine. Reproduced exactly afterwards, by
-hiding the cache and the key: `recall 12/14 · MRR 0.764 · 34.6 nodes`, digit for digit.
-
-With the bridge alive, same golden set:
-
-| lexical arm | held-out (bridge ALIVE) | nodes/question |
+| arm | how it scores | what it catches |
 |---|---|---|
-| substring (legacy) | recall **14/14** · hit@3 12/14 · MRR **0.885** | 39.1 |
-| **prefix + BM25 (default)** | recall **14/14** · hit@3 **13/14** · MRR 0.867 | 41.4 |
+| **lexical** | BM25 (`k1=1.2`, `b=0.75`, literature defaults) over the symbol name, the file path and the docstring | the word you typed appears in the code |
+| **terms** | same scoring, but over the **English** identifiers the caller supplied | the language bridge (below) |
+| **graph** | BFS from the top 8 seeds, 2 hops, cap of 60 nodes, decaying with `1/(1+distance)` | the neighbour the question doesn't name, but which answers it |
 
-Two consequences. The good one: **the engine is better than what was published.** The bad one:
-**the default lexical arm was chosen on a crippled engine.** Crippled, `prefix` won comfortably;
-intact, the two are **tied** — `legado` leads on MRR, `prefix` on hit@3 at ~6% more nodes. `prefix`
-stays the default on the strength of the training set (0.693 vs 0.653), but by a narrow margin.
+### 3. The language bridge — the whole trick
 
-> **The lesson, good for any harness:** an optional component that fails on its own turns every
-> subsequent measurement into a measurement of a different engine. If your retriever has a part
-> that can degrade, **the harness must refuse to print a number** when it does. Here that guard
-> existed — in *another* file, added the day before. A defense applied in one place is a defense
-> that doesn't exist yet.
+You ask *"where does it keep the **pontuação**"* and the code is called
+`split_string_by_punctuations`. Not a single word matches. Two things cross that gap:
 
-> **If you benchmark your own retriever, steal this and not the number:** a golden set you tuned
-> against no longer measures the engine, it measures the set. Build the second one backwards (target
-> first, by sampling; question afterwards) and run it **once per change**.
+**Prefix matching.** A question term matches a code token when it is a **prefix** of it and is at
+least 4 characters long — `portugues` ⊂ `portuguese`. The 4-character floor exists to stop `som`
+from matching `awesome`. This works as an accidental cross-lingual stemmer, and it was found by
+accident: [the "correct" exact-token version failed the blind set](MEDICOES.en.md#the-training-set-isnt-enough--and-heres-the-proof).
 
-## ⚖️ What these numbers do **not** prove
+**Caller-supplied terms.** The main path doesn't guess the translation — it **receives** it. Over
+MCP the host model fills the English identifiers in by itself; in the terminal you pass
+`--termos "auth,token,validate"`. Whoever asks translates better than any automatic bridge, because
+they know the conversation. With no terms the engine falls back to a local cache; with no cache, to
+pure lexical — and it **names the path it took** in every answer
+(`rewrite=chamador | cache | sem-termos | desligado`).
 
-An aggregate number hides **what kind** of questions were asked. Following
-[CodeCompass](https://arxiv.org/abs/2602.20048), which evaluates code retrieval across three regimes,
-every question is classified **mechanically** — the graph decides, not the author:
+### 4. The hardening: stopping the popular symbol from always winning
 
-| | the target is… | what would already find it |
-|---|---|---|
-| **G1** | named by a term in the question itself | `grep` |
-| **G2** | ≤2 hops from something the question names | traversal — **this is where a graph should pay off** |
-| **G3** | neither named nor reachable by short traversal | only a semantic index |
+Inherited from [aider's repo-map](https://aider.chat/2023/10/22/repomap.html), and it's what
+separates this from `grep` with a ranking:
 
-And the result is uncomfortable:
+- **degree damping — `1/√(1+refs)`.** A symbol referenced 99 times (`log`, `init`, `utils`) is worth
+  10× less than one referenced once. Without it, the hub node monopolises every question.
+- **`×0.1` for generic.** Short name, private (`_helper`), or defined in more than 5 files.
+- **`×10` for well-named.** A descriptive identifier of 8+ characters —
+  `split_string_by_punctuations` says what it does, `p2` doesn't.
 
-| | composition | G1 | G2 | G3 |
-|---|---|---|---|---|
-| training (24) | 71% G1 | 16/17 · MRR **0.843** | 2/2 · hit@3 **0/2** | 2/5 |
-| held-out (14) | **86% G1** | 12/12 · MRR **0.892** | n=1 | n=1 |
+> In Go and C, where short names are idiomatic, the bonus barely fires. Unlock it with
+> `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
 
-**In other words: `MRR 0.764` is effectively the G1 number** — the regime where keyword search would
-already work. The engine is very good there. In the regime that would justify a graph existing, it is
-**unproven**, for two different reasons:
+### 5. The fusion: RRF, not a sum of scores
 
-- **G2 is a RANKING defect, not a retrieval one.** Recall 2/2, hit@3 **0/2**: the engine **finds the
-  target and buries it**. The cause is known — graph distance only takes 3 values, so dozens of nodes
-  tie and the tie-break ends up being BFS insertion order. *(We tried breaking ties by convergence,
-  summing `1/(1+d)` across seeds: it regressed both sets and cost +51% tokens, most likely because it
-  rewards hub nodes — exactly what the `sqrt(refs)` damping exists to prevent. If that's your first
-  idea, it was ours too, and it didn't work.)*
+The three arms produce scores on incomparable scales — you can't add BM25 to a graph distance.
+[Reciprocal Rank Fusion](https://dl.acm.org/doi/10.1145/1571941.1572114) solves it by fusing
+**positions**, not values:
 
-  **Update 2026-07-29 — a second cause, and this one was bigger.** The recency weight was **×50** in
-  the file-selection step: any file touched in git within 30 days outranked any untouched file,
-  regardless of relevance. Caught on a real question where the seeds hit the exact target symbol
-  (**rank 1 with the boost off**) and eight recently-edited files pushed past it — the target did not
-  even make the top 8. So part of "finds it and buries it" was this spice, not the BFS tie. Lowered to
-  **×3**, chosen on the blind set (held-out 14/14, training 20/24; `×1` won on training and **lost**
-  on held-out).
-  **What we have NOT measured: whether this fixes G2's hit@3.** It is plausible and unverified — the
-  G2 stratum has not been re-run since the change. It stays a hypothesis, not a fix.
-  The origin error matters more than the number: the 2026-07-18 measurement compared
-  *boost-on-node vs boost-on-file* and picked the latter. **Nobody compared boost vs NO boost.**
-  Every heuristic has to beat the "without it" baseline.
-- **G3 remains UNTESTED — neither confirmed nor refuted.** A third set scored **1/3**, and for five
-  days this text called that *"a result that runs against the project's bet"*, adding G2's `0/1` to
-  claim "three independent sets tell the same story". **That was self-contradictory:** the section
-  just below explains that **8 of the 12 questions in that set were not G3 at all** — so it is not an
-  independent third set, and `1/3` over a disqualified sample is evidence of nothing. Corrected
-  2026-07-29. What is left is honest and smaller: **nobody has measured G3 yet.** That line of work
-  is shelved for **cost**, not because it was refuted.
+$$\text{RRF}(node) = \sum_{arm} \frac{1}{60 + \text{rank of the node in that arm}}$$
 
-### And the "G3" set wasn't G3 — a warning for anyone repeating this
+`k=60` is Cormack's canonical constant (2009). The practical effect: a node that comes 3rd in all
+three arms beats a node that is 1st in only one. **Agreement is worth more than a peak.**
 
-Those 12 questions were mined from the graph by looking for pairs (A→T) joined by an edge and
-sharing **no tokens at all**, expecting that to yield hidden dependencies. The classifier disagreed:
-**8 of the 12 are G1.** The mining hit its target 3 times out of 12.
+### 6. Picking the files
 
-The failure is instructive: A and T not sharing vocabulary **does not imply** that the *question*
-doesn't share vocabulary with T. The question is written by a human describing the consumer, and it
-smuggles the target's vocabulary back in by another route. **If you build a G3 set, classify the
-final question — not the node pair.** Otherwise you measure G1 while believing you measure G3.
+Nodes add their scores to their files, the top 5 files pass, and only the nodes **inside them** are
+returned. One last spice applies here: a file touched in git in the last 30 days gets **×3**.
 
-> **The honest reading:** what's demonstrated here is **token economy** — the same answer from a
-> fraction of the context, and that held up in every measurement (6.2x, 20/24 hit rate). **Superiority
-> over `grep` is undemonstrated** — and note that "undemonstrated" is not "refuted", which is what
-> this paragraph asserted until 2026-07-29 ("the little evidence that exists points against it").
-> Only G2 has a measured, real defect; the G3 set was invalid. The samples are small and settle
-> nothing on their own, but they are the only ones there are, and hiding them behind a pretty
-> aggregate would be dishonest — as would hardening them into a verdict, which is the opposite error
-> and is the one that happened here.
->
-> If you publish numbers for your retriever, publish the **composition** alongside them: without it,
-> "MRR 0.76" can mean very different things.
+The weight is ×3 and not more because that was measured: [at ×50 it stopped being a tie-breaker and
+became a dominant term](MEDICOES.en.md#-what-these-numbers-do-not-prove) — any recently edited file
+outranked any relevant one. Recency matches on the **full path**, never on the basename: otherwise
+every `utils.py` in a Django project would collect the bonus together.
+
+### 7. Broad questions go through another door
+
+*"How does this project work?"* isn't a traversal question — it's a summary question. The engine
+detects that shape (and discards any question that names an identifier) and returns the project
+summary, **with its date and age in plain sight**. A stale summary presented as current is worse
+than no summary at all.
+
+---
 
 ## 🚀 Install
 
-**Prereqs:** **Node 22+** and **[graphify](https://github.com/safishamsi/graphify)**
-(`uv tool install graphifyy`). No API key at all — the engine is 100% local.
+**Requirements:** **Node 22+** and **[graphify](https://github.com/safishamsi/graphify)**
+(`uv tool install graphifyy`). No API key — the engine is 100% local.
 
-> Graphify's `[gemini]` extra is **not required** by this engine. It powers graphify's own LLM
-> features (`extract`, `label` — naming communities), which this project does not use. If you
-> want those, install `"graphifyy[gemini]"` and configure **its** key; nothing here will ask
-> you for one.
+> graphify's `[gemini]` extra is **not required** by this engine. It powers graphify's own LLM
+> features (`extract`, `label` — naming the communities), which this project does not use. If you
+> want those, install `"graphifyy[gemini]"` and configure **its** key; nothing here will ask for one.
 
 ```bash
 git clone https://github.com/kamusmg/cerebro-engine
@@ -257,47 +171,29 @@ cp projects.example.json projects.json      # list YOUR repos: { name, root }
 graphify update "/absolute/path/to/my-backend"
 
 # ask
-node ask.mjs "where is the auth token validated" my-backend
-node ask.mjs --lista                          # projects that have a graph
-
-# measure recall on your own golden set
-cp reports/golden-questions.example.json reports/golden-questions.json   # edit with YOUR questions
-node harness-recall.mjs
+node ask.mjs "where is the auth token validated" my-backend --termos "auth,token,validate"
+node ask.mjs --lista                          # projects that already have a graph
 ```
 
-> ⚠️ **On first use, pass `--termos`.** The rewrite cache (`.rewrite-cache.json`) **does not
-> ship** — it holds identifiers from the author's projects, so git ignores it. On a fresh clone
-> it is empty, and a question in one language against code in another falls back to plain
-> lexical matching: the engine **says so** (`rewrite=sem-termos`), but the result will be poor.
+> ⚠️ **On first use, pass `--termos`.** The translation cache (`.rewrite-cache.json`) **does not ship
+> with the clone** — it holds identifiers from the author's projects, so git ignores it. In a fresh
+> clone it is empty, and a question in one language against code in another falls back to pure
+> lexical: the engine **says so** (`rewrite=sem-termos`), but the result will be poor.
 >
-> This is the design, not a bug to work around. **Whoever asks translates better than any
-> automatic bridge**, because they have the conversation; measured, the term arm is worth 3 to 4
-> more answers found. The cache exists only for callers with no model at hand — cron, a script,
-> you in bash.
->
-> Through **MCP** this never comes up: the host model fills the terms in by itself.
+> Over **MCP** the problem doesn't arise: the host model fills the terms in by itself.
 
-**Flags:** `--termos "a,b,c"` (translate the question yourself — skips cache/lexical-only) ·
-`--sem-rewrite` (turn the term arm off — this is how the baseline gets measured) ·
-`--cru` (raw, no re-rank).
+**Flags:** `--termos "a,b,c"` (translate the question yourself) · `--sem-rewrite` (disable the terms
+arm — this is how you measure the baseline) · `--cru` (raw, no re-rank).
 
-> **`--motor=graphify` was removed on 2026-08-25.** It enabled the comparison arm of the A/B
-> against raw `graphify`, and that A/B closed on 2026-07-29. Dead weight was not the reason for
-> cutting it: **that comparator was biased.** It matched file recency by *basename* — the exact
-> defect the new engine had already fixed by matching on the full path. Two files with the same
-> name in different folders counted as one on one side of the comparison and not on the other.
-> The old path ran with a limp, and every published margin leans the same way.
->
-> **This does not overturn the verdict** — the gap is far too wide to be bias alone, and the own
-> engine stays. But the number can no longer be quoted as if it were clean. Last measurement
-> before removal, ruler still crooked: **own engine 21/24 · MRR 0.636 × graphify path 14/24 ·
-> MRR 0.519**.
+**Env:** `CEREBRO_LEXICO=legado|bm25|prefixo` · `CEREBRO_W_BEMNOMEADO` · `CEREBRO_MIN_IDENT` ·
+`CEREBRO_MIN_PREFIXO` · `CEREBRO_W_RECENTE` · `CEREBRO_CACHE_RO=1` (never write to the cache —
+mandatory in any measurement).
 
 ## 🔌 As an MCP tool (Claude Desktop, Cursor, Antigravity…)
 
-Instead of the terminal, plug cerebro-engine in as a **native** tool via
-[MCP](https://modelcontextprotocol.io) — the AI then calls it itself, no command to type. It exposes
-two tools: **`ask_graph`** and **`list_projects`**. In `claude_desktop_config.json` (or your client's
+Instead of running it in a terminal, plug cerebro-engine in as a **native** tool over
+[MCP](https://modelcontextprotocol.io) — then the AI calls it on its own. It exposes two tools:
+**`ask_graph`** and **`list_projects`**. In `claude_desktop_config.json` (or your client's
 equivalent):
 
 ```json
@@ -311,52 +207,66 @@ equivalent):
 }
 ```
 
-Zero dependencies — the MCP protocol is implemented by hand (the project is vanilla by choice).
+Zero runtime dependencies — the MCP protocol is hand-implemented (the project is vanilla by choice).
+The server keeps the graph in RAM between calls, revalidating by `mtime` on every query.
 
-## 🔬 How it works
+## 🧪 Tests
 
-```mermaid
-flowchart LR
-    Q["question<br/>(any language)"] --> S{seed selection}
-    S -->|lexical + IDF| A[lexical seeds]
-    S -->|rewrite → code EN<br/>caller-supplied terms| B[translated seeds]
-    A --> BFS[own BFS<br/>over graph.json]
-    B --> BFS
-    BFS --> RRF["Reciprocal Rank Fusion<br/>k=60"]
-    RRF --> C[top-5 files<br/>that answer]
-    style Q fill:#0a0f30,stroke:#39d353,color:#eee
-    style C fill:#16213e,stroke:#f0a13a,color:#eee
-    style RRF fill:#1a1a2e,stroke:#9d8cff,color:#eee
+```bash
+npm test          # 62 tests in node:test, ~150ms, zero runtime dependencies
+npm run typecheck # JSDoc + @ts-check (uses typescript, in devDependencies)
 ```
 
-## 📚 Prior art (nothing created, everything copied)
+The suite pins the six knobs that decide the ranking — prefix anchor, RRF `k`, degree damping, BFS
+depth and cap, generic penalty. Each was verified by mutation: break any one of them in the engine
+and a test turns red.
 
-- Repo-map ranking from **[aider](https://aider.chat/2023/10/22/repomap.html)** — the `sqrt(refs)` damping
-  is what stops frequent symbols dominating.
-- The language bridge is **[HyDE](https://arxiv.org/abs/2212.10496)**-adjacent query rewriting.
-- Fusion is **[RRF](https://dl.acm.org/doi/10.1145/1571941.1572114)** (k=60).
-- Embeddings are deliberately **not** used: the rewrite bridge already gets full recall on extractable
-  targets, and (like **[Cody](https://sourcegraph.com/blog/how-cody-understands-your-codebase)**) they
-  weren't worth the index-maintenance cost. Pre-wired as a 4th RRF arm if a bigger benchmark ever needs it.
+## 📊 Measured
 
-## 🧭 Principles
+| engine path | recall | hit@3 | MRR |
+|---|:---:|:---:|:---:|
+| caller-supplied `--termos` (production) | 20/24 | 17/24 | **0.701** |
+| rewrite-cache hit | **21/24** | 17/24 | 0.636 |
+| `--sem-rewrite` (baseline) | 17/24 | 14/24 | 0.533 |
 
-- **The graph is the index; the file is the truth.** It points; you confirm in code.
-- **If the number looks too good, the method is wrong.** Numbers here are measured, method stated.
-- **Measure before you build.** The embedding arm wasn't built because the data didn't ask for it.
+On a second golden set, **built backwards on purpose** and never used to tune anything:
+**14/14 · MRR 0.869**.
+
+> 📖 **[The full record is in `MEDICOES.en.md`](MEDICOES.en.md)** — the method, the composition of
+> the golden sets, what these numbers do **not** prove, and the three times this project published a
+> wrong number and had to correct itself in public. If you're going to compare against your own
+> retriever, read that first: an aggregate number without the golden set's composition means almost
+> nothing.
 
 ## ⚠️ Scope & honest limits
 
-- **100% local, no key required:** the query-rewrite bridge no longer makes a network call — the
-  terms come from WHOEVER ASKS (you passing `--termos`, or the model calling over MCP). No terms
-  falls back to the local cache; no cache falls back to lexical search (`--sem-rewrite` forces that).
-- **Repo-scale, not giant-monorepo scale:** `graph.json` is loaded fully into memory. Fast for
-  personal/medium repos (hundreds–thousands of nodes); a hundreds-of-MB monorepo would eventually need
-  an on-disk index (SQLite/DuckDB).
-- **The graph can go stale:** this is just the **retriever**. After a big refactor, re-run
-  `graphify update` (the auto-sync layer isn't part of this engine).
-- **Tunable heuristics:** weights are tuned for descriptive names (Python/JS). For Go/C (short names),
-  unlock via env: `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
+- **100% local, no key at all:** terms come from WHOEVER ASKS (you typing `--termos`, or the model
+  calling over MCP). With no terms it falls back to the local cache; with no cache, to lexical search.
+- **REPO scale, not giant-monorepo scale:** `graph.json` is loaded whole into memory. For
+  personal/medium repos (hundreds–thousands of nodes) it flies; a monorepo of hundreds of MB would
+  one day want an on-disk index (SQLite/DuckDB).
+- **The graph can go stale:** this is only the **search**. After a large refactor, run
+  `graphify update` again (the auto-sync layer is not part of this engine).
+- **Semantic blindness:** the AST sees explicit calls. Dependency injection, magic decorators and
+  dynamic routing do not become edges.
+
+## 📚 Prior art (nothing created, everything copied)
+
+- Ranking from **[aider](https://aider.chat/2023/10/22/repomap.html)**'s repo-map — `sqrt(refs)` is what
+  stops a frequent symbol from dominating.
+- The language bridge is **[HyDE](https://arxiv.org/abs/2212.10496)**-adjacent (query rewriting).
+- Fusion by **[RRF](https://dl.acm.org/doi/10.1145/1571941.1572114)** (k=60), Cormack 2009.
+- Embeddings are **deliberately not** used: the rewrite bridge already gives full recall on targets that
+  exist in the graph, and (as **[Cody](https://sourcegraph.com/blog/how-cody-understands-your-codebase)**
+  concluded) they weren't worth the index maintenance. They stay pre-wired as a 4th RRF arm, should a
+  larger golden set ever ask for them.
+
+## 🧭 Principles
+
+- **The graph is the index; the file is the truth.** It points; you confirm in the code.
+- **If the number looks too good, the method is wrong.** Here the numbers are measured and the ruler ships with them.
+- **Measure before building.** The embeddings arm wasn't built because the data didn't ask for it.
+- **Degradation has a name.** Every answer states which path it took. Silence would be the worst defect.
 
 ## 📄 License
 

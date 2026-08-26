@@ -13,7 +13,7 @@ tokens, resposta mais rápida.
 [![Node](https://img.shields.io/badge/Node-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Licença](https://img.shields.io/badge/licença-MIT-blue)](LICENSE)
 [![Grátis](https://img.shields.io/badge/custo-%240%20·%20local-brightgreen)]()
-[![Recall](https://img.shields.io/badge/recall-20%2F24%20medido-orange)]()
+[![Recall](https://img.shields.io/badge/recall-20%2F24%20medido-orange)](MEDICOES.md)
 [![feito no](https://img.shields.io/badge/feito%20no-🇧🇷%20Brasil-009c3b)]()
 
 <br>
@@ -24,10 +24,6 @@ tokens, resposta mais rápida.
 
 ---
 
-> **Postura honesta:** isto **não** promete "economize 8x". Ele te entrega o **método e a régua** pra você
-> **medir a economia no seu próprio código**. Se o número parecer bom demais, o método está errado — por
-> isso a régua vem junto.
-
 ## 🎯 O problema
 
 Um agente que abre 30 arquivos pra responder uma pergunta **queima tokens e tempo**. Um grafo do código
@@ -35,14 +31,6 @@ Um agente que abre 30 arquivos pra responder uma pergunta **queima tokens e temp
 mantém a pontuação na legenda?"* num **ponteiro pros dois arquivos que importam**.
 
 O grafo é o **índice**; o arquivo é a **verdade** — sempre confirme no código real antes de editar.
-
-## ✨ O que ele faz
-
-| | |
-|---|---|
-| 🔎 **`ask.mjs`** | Pergunta → os arquivos/símbolos que respondem. Busca híbrida: léxico + **ponte de tradução da pergunta** (pergunta em português, código em inglês? ele atravessa) + travessia no grafo, fundidos com **Reciprocal Rank Fusion** (k=60). |
-| ⚙️ **`retrieval.mjs`** | O motor: seleção de *seed* própria sobre o `graph.json`, com endurecimento estilo aider (`sqrt(refs)` pra símbolo frequente não dominar, `×0.1` genérico, `×10` bem-nomeado), BFS próprio e RRF. |
-| 📏 **`harness-recall.mjs`** | Mede **recall / hit@3 / MRR** num gabarito que **você** monta a partir dos seus repos. |
 
 ## 💻 Na prática
 
@@ -61,203 +49,109 @@ NODE require_auth()     [src=app/deps.py             loc=L20  community=7]
 
 *(saída ilustrativa; o formato é esse)*
 
-## 📊 Medido — em DOIS gabaritos, um deles held-out
+---
 
-| recuperador | recall | hit@3 | MRR |
-|---|:---:|:---:|:---:|
-| BFS do grafo (linha de base) | 15/24 | 14/24 | 0.529 |
-| híbrido + rewrite + RRF | 20/24 | **19/24** | 0.653 |
-| **+ BM25 com casamento por prefixo** | **20/24** | 18/24 | **0.693** |
+## 🔬 Como funciona
 
-As 4 furadas restantes são **cobertura** (símbolos Arduino/`.ino` que o parser não extrai), **não** recall.
-Nos alvos que existem no grafo: **20/20**.
+```mermaid
+flowchart LR
+    Q["pergunta<br/>(qualquer idioma)"] --> S{seleção de seed}
+    S -->|BM25 + prefixo| A[braço léxico]
+    S -->|termos de<br/>quem pergunta| B[braço de termos]
+    A --> BFS["BFS próprio<br/>2 saltos · teto 60"]
+    B --> BFS
+    A --> RRF
+    B --> RRF
+    BFS -->|braço do grafo| RRF["Reciprocal Rank Fusion<br/>k=60"]
+    RRF --> F["escolha dos arquivos<br/>+ recência do git ×3"]
+    F --> C["top-5 arquivos<br/>que respondem"]
+    style Q fill:#0a0f30,stroke:#39d353,color:#eee
+    style C fill:#16213e,stroke:#f0a13a,color:#eee
+    style RRF fill:#1a1a2e,stroke:#9d8cff,color:#eee
+```
 
-> 🔴 **VOCÊ NÃO CONSEGUE REPRODUZIR ESTES NÚMEROS, e é justo você saber disso antes de confiar
-> neles.** Até 25/08 esta linha dizia *"reproduza com `node harness-recall.mjs`"* — e não dava:
-> o gabarito aponta para repositórios **privados** do autor, então publicá-lo vazaria exatamente
-> o que este repo toma o cuidado de não vazar. O harness está aqui, o método está descrito, os
-> números são reprodutíveis **pelo autor** — e para você são a palavra dele.
->
-> O que dá pra fazer é medir **o seu**: monte um gabarito no formato de
-> [`golden-questions.example.json`](reports/golden-questions.example.json) sobre o seu próprio
-> código e rode o harness. É a única medição que responde a pergunta que importa pra você.
+### 1. O mapa: o que o `graph.json` tem dentro
 
-### Os três caminhos do mesmo motor (25/08/2026)
+Quem indexa é o **graphify**: ele passa o tree-sitter no repositório e escreve um `graph.json` com
 
-A tabela acima mede **um** caminho. O motor é usado por três portas diferentes, e até 25/08 só a
-do meio tinha número — que era citado como se descrevesse a primeira. Agora as três são medidas
-lado a lado, na mesma execução:
+- **nós** — cada função, classe, método e arquivo, com `label` (o nome do símbolo), `source_file`,
+  `loc` (a linha), e a comunidade Leiden a que pertence;
+- **arestas** — quem chama quem, quem importa quem, quem define o quê;
+- **nós de `rationale`** — docstrings e comentários explicativos, ligados ao símbolo que descrevem.
+  São eles que deixam a prosa do código entrar na busca.
 
-| caminho | recall | hit@3 | MRR |
-|---|:---:|:---:|:---:|
-| `--termos` vindos de quem pergunta | 20/24 | 17/24 | **0.701** |
-| acerto no cache de rewrite | **21/24** | 17/24 | 0.636 |
-| `--sem-rewrite` (sem o braço de termos) | 17/24 | 14/24 | 0.533 |
+Este projeto **não indexa nada**: ele só lê esse arquivo. É por isso que ele custa $0 e roda offline.
 
-Duas leituras. **O braço de termos paga**: 3 a 4 respostas a mais que o baseline, e +0,10 a +0,17
-de MRR. E o caminho de produção **troca um acerto por um ranking claramente melhor** — o que faz
-sentido, porque quem pergunta conhece a conversa e escolhe identificadores melhores que um cache
-congelado semanas atrás.
+### 2. Três braços, porque nenhum sozinho basta
 
-> ⚠️ **Medir estes dois primeiros caminhos juntos exige `CEREBRO_CACHE_RO=1`** (o harness já liga).
-> Sem isso, medir o caminho `--termos` **grava os termos da medição dentro do cache de rewrite**,
-> e o caminho do cache passa a devolver os mesmos termos: os dois braços viram o mesmo número e o
-> baseline do braço antigo morre dentro da própria medição. Isso foi pego acontecendo — o braço
-> do cache caiu de 21/24 · MRR 0,636 para exatamente o número do outro, o que **parece um achado
-> e é um artefato**. Termômetro não pode mudar a temperatura.
+A pergunta vira três listas ordenadas de nós candidatos, cada uma com um viés diferente:
 
-> ⚠️ **Não leia esta tabela sem a composição do gabarito.** A maioria destas perguntas cai no regime
-> em que uma busca textual já resolveria — o que infla qualquer número agregado. Os detalhes estão em
-> [o que estes números **não** provam](#-o-que-estes-números-não-provam), e vale a pena ler antes de
-> comparar com o seu.
-
-### O gabarito de treino não basta — e a prova disso
-
-As 24 perguntas acima são **treino**: elas e os ajustes que elas justificam nasceram juntos. Por isso
-existe um segundo gabarito, **construído ao contrário de propósito** — o alvo é sorteado
-mecanicamente (semente fixa) entre nós com docstring, e só **depois** a pergunta é escrita a partir
-do que a função faz. Ele nunca foi usado pra ajustar nada.
-
-**Ele reprovou a primeira versão desta melhoria.** BM25 clássico com token exato parecia ótimo no
-treino (recall 20→**21**, MRR 0.653→**0.733** com `k1` afinado) e desabou no held-out (recall
-**11/14** contra 12/14 do código antigo), com o `k1` afinado rendendo resultado **idêntico** ao
-default — a afinação comprou zero.
-
-A causa: o casamento por substring que a "correção" eliminou funcionava como um **radicalizador
-cross-lingual acidental**. Quando a pergunta vem num idioma e os identificadores são ingleses, a
-palavra da pergunta é com frequência **prefixo** do cognato (`portugues` ⊂ `portuguese`). Daí o
-desenho final: BM25 com `k1`/`b` nos **defaults da literatura** e casamento **por prefixo**.
-
-| | treino (24) | held-out (14) | nós/pergunta |
-|---|---|---|---|
-| substring (anterior) | MRR 0.653 | recall 12 · MRR 0.721 | 36.4 |
-| BM25 token exato | MRR 0.691 | recall **11** · MRR 0.693 | 34.6 |
-| **prefixo + BM25 (padrão)** | MRR **0.693** | recall 12 · MRR **0.764** | **34.6** |
-
-A/B a qualquer momento: `CEREBRO_LEXICO=legado|bm25|prefixo`.
-
-### 🔴 Correção: a coluna held-out acima foi medida com o motor amputado
-
-A ponte de reescrita cross-language é 1 chamada a uma API free. A cota tinha estourado; o motor
-degradou pro braço léxico e **avisou** (`rewrite=falhou`) — mas o harness não lia o aviso e
-publicou o número como se fosse propriedade do motor. Reproduzido depois na vírgula, escondendo o
-cache e a chave: `recall 12/14 · MRR 0.764 · 34.6 nós`, dígito por dígito.
-
-Com a ponte viva, mesmo gabarito:
-
-| léxico | held-out (ponte VIVA) | nós/pergunta |
+| braço | como pontua | o que ele pega |
 |---|---|---|
-| substring (legado) | recall **14/14** · hit@3 12/14 · MRR **0.885** | 39.1 |
-| **prefixo + BM25 (padrão)** | recall **14/14** · hit@3 **13/14** · MRR 0.867 | 41.4 |
+| **léxico** | BM25 (`k1=1.2`, `b=0.75`, defaults da literatura) sobre o nome do símbolo, o caminho do arquivo e a docstring | a palavra que você digitou aparece no código |
+| **termos** | mesma pontuação, mas sobre os identificadores **em inglês** que quem pergunta forneceu | a ponte de idioma (veja abaixo) |
+| **grafo** | BFS a partir dos 8 melhores seeds, 2 saltos, teto de 60 nós, decaindo com `1/(1+distância)` | o vizinho que a pergunta não nomeia, mas que responde |
 
-Duas consequências. A primeira é boa: **o motor é melhor do que estava publicado.** A segunda não:
-**a escolha do léxico padrão foi feita com o motor amputado.** Amputado, `prefixo` ganhava com
-folga; inteiro, os dois **empatam** — `legado` leva no MRR, `prefixo` no hit@3 e custa ~6% mais
-nós. `prefixo` segue como padrão pelo treino (0.693 vs 0.653), mas por margem estreita.
+### 3. A ponte de idioma — o pulo do gato
 
-> **A lição, que vale pra qualquer harness:** um componente opcional que cai sozinho transforma
-> toda medição seguinte numa medição de outro motor. Se o seu retriever tem parte que pode
-> degradar, **o medidor tem que se recusar a dar número** quando ela cai. Aqui a trava existia —
-> em *outro* arquivo, posto no dia anterior. Defesa aplicada num lugar só é defesa que ainda não
-> existe.
+Você pergunta *"onde mantém a **pontuação**"* e o código se chama `split_string_by_punctuations`.
+Nenhuma palavra bate. Duas coisas atravessam esse vão:
 
-> **Se você for medir seu próprio retriever, roube isto e não o número:** um gabarito onde você
-> ajustou parâmetros não mede mais o motor, mede o gabarito. Construa o segundo ao contrário
-> (alvo primeiro, por sorteio; pergunta depois) e rode-o **uma vez por mudança**.
+**Casamento por prefixo.** Um termo da pergunta casa com um token do código quando é **prefixo** dele
+e tem pelo menos 4 caracteres — `portugues` ⊂ `portuguese`, `pontuac` ⊂ `pontuacao`. O mínimo de 4
+existe pra impedir que `som` case com `awesome`. Isso funciona como um radicalizador cross-lingual
+acidental, e foi descoberto por acaso: [a versão "correta" com token exato reprovou no gabarito
+cego](MEDICOES.md#o-gabarito-de-treino-não-basta--e-a-prova-disso).
 
-## ⚖️ O que estes números **não** provam
+**Termos de quem pergunta.** O caminho principal não tenta adivinhar a tradução — ele **recebe**.
+Via MCP, o modelo hospedeiro preenche os identificadores em inglês sozinho; no terminal, você passa
+`--termos "auth,token,validate"`. Quem pergunta traduz melhor que qualquer ponte automática, porque
+conhece a conversa. Sem termos, o motor cai no cache local; sem cache, no léxico puro — e **avisa
+qual caminho usou** em toda resposta (`rewrite=chamador | cache | sem-termos | desligado`).
 
-Um número agregado esconde **de que tipo** eram as perguntas. Seguindo o
-[CodeCompass](https://arxiv.org/abs/2602.20048), que mede recuperação de código em três regimes,
-classificamos cada pergunta **mecanicamente** — quem decide é o grafo, não o autor:
+### 4. O endurecimento: impedir que o símbolo popular ganhe sempre
 
-| | o alvo é… | quem já resolveria |
-|---|---|---|
-| **G1** | nomeado por um termo da própria pergunta | `grep` |
-| **G2** | a ≤2 saltos de algo que a pergunta nomeia | travessia — **é aqui que o grafo deveria pagar** |
-| **G3** | nem nomeado nem alcançável por travessia curta | só um índice semântico |
+Herdado do [repo-map do aider](https://aider.chat/2023/10/22/repomap.html), e é o que separa isto de
+um `grep` com ranking:
 
-E o resultado é desconfortável:
+- **amortecimento por grau — `1/√(1+refs)`.** Um símbolo referenciado 99 vezes (`log`, `init`,
+  `utils`) vale 10× menos que um referenciado uma vez. Sem isso, o nó-hub monopoliza toda pergunta.
+- **`×0.1` pro genérico.** Nome curto, privado (`_helper`) ou definido em mais de 5 arquivos.
+- **`×10` pro bem-nomeado.** Identificador descritivo com 8+ caracteres — `split_string_by_punctuations`
+  diz o que faz, `p2` não.
 
-| | composição | G1 | G2 | G3 |
-|---|---|---|---|---|
-| treino (24) | 71% G1 | 16/17 · MRR **0.843** | 2/2 · hit@3 **0/2** | 2/5 |
-| held-out (14) | **86% G1** | 12/12 · MRR **0.892** | n=1 | n=1 |
+> Em Go e C, onde nome curto é idiomático, o bônus quase não dispara. Destrave com
+> `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
 
-**Ou seja: o `MRR 0.764` é, na prática, o número do G1** — o regime em que a busca por palavra já
-funcionaria. O motor é muito bom nele. No regime que justificaria um grafo existir, ele é
-**não-provado**, e em dois pontos por motivos diferentes:
+### 5. A fusão: RRF, não soma de pontos
 
-- **G2 é um defeito de ORDENAÇÃO, não de recuperação.** Recall 2/2, hit@3 **0/2**: o motor **acha o
-  alvo e o enterra no fim da lista**. A causa é conhecida — a distância no grafo só assume 3 valores,
-  então dezenas de nós empatam e o desempate acaba sendo a ordem de inserção do BFS. *(Já tentamos
-  desempatar por convergência, somando `1/(1+d)` sobre cada seed: piorou os dois gabaritos e custou
-  +51% de token. Provavelmente porque premia o nó-hub, que é justamente o que o damping `sqrt(refs)`
-  existe pra conter. Se essa for sua primeira ideia — foi a nossa, e não funcionou.)*
+Os três braços produzem pontuações em escalas incomparáveis — não dá pra somar BM25 com distância de
+grafo. O [Reciprocal Rank Fusion](https://dl.acm.org/doi/10.1145/1571941.1572114) resolve fundindo
+**posições**, não valores:
 
-  **Atualização de 29/07/2026 — uma segunda causa, e esta era maior.** O peso de recência valia
-  **×50** na escolha dos arquivos: qualquer arquivo tocado no git nos últimos 30 dias batia qualquer
-  arquivo não tocado, independente de relevância. Flagrado numa pergunta real em que os *seeds*
-  acertaram o símbolo-alvo (**rank 1 sem o boost**) e oito arquivos recém-editados passaram na
-  frente — o alvo não entrou nem no top-8. Ou seja: parte do "acha e enterra" era este tempero, não
-  o empate do BFS. Baixado pra **×3**, escolhido no gabarito cego (held-out 14/14, treino 20/24;
-  `×1` ganhava no treino e **caía** no held-out).
-  **O que ainda não medimos: se isso conserta o hit@3 do G2.** É plausível e não está verificado —
-  o estrato G2 não foi re-rodado depois da mudança. Fica como hipótese aberta, não como conserto.
-  O erro de origem vale mais que o número: a medição de 18/07 comparou *boost-no-nó × boost-no-arquivo*
-  e escolheu o segundo. **Ninguém comparou boost × ausência de boost.** Toda heurística tem que
-  vencer o baseline "sem ela".
-- **G3 continua NÃO TESTADO — nem confirmado, nem refutado.** Um terceiro conjunto deu **1/3**, e
-  este texto durante cinco dias chamou isso de *"resultado contra a aposta do projeto"*, somando com
-  o `0/1` do G2 pra dizer que "três conjuntos independentes contam a mesma história". **Era
-  autocontradição:** a seção logo abaixo explica que **8 das 12 perguntas daquele conjunto nem eram
-  G3** — então ele não é um terceiro conjunto independente, e `1/3` sobre uma amostra
-  desqualificada não é evidência de nada. Corrigido em 29/07/2026. O que sobra é honesto e menor:
-  **ninguém mediu G3 ainda.** A linha de trabalho está arquivada por **custo**, não por refutação.
+$$\text{RRF}(nó) = \sum_{braço} \frac{1}{60 + \text{posição do nó naquele braço}}$$
 
-### E o conjunto "G3" nem era G3 — o que é um aviso pra quem for repetir isto
+O `k=60` é a constante canônica de Cormack (2009). O efeito prático: um nó que aparece em 3º lugar
+nos três braços ganha de um nó que é 1º em um só. **Concordância vale mais que pico.**
 
-As 12 perguntas do terceiro conjunto foram mineradas do grafo procurando pares (A→T) ligados por
-aresta e **sem nenhum token em comum**, na expectativa de produzir dependência escondida. O
-classificador discordou: **8 das 12 são G1.** A mineração acertou o alvo em 3 de 12.
+### 6. A escolha final dos arquivos
 
-A falha é instrutiva: A e T não compartilharem vocabulário **não implica** que a *pergunta* não
-compartilhe com T. A pergunta é escrita por uma pessoa descrevendo o consumidor, e ela reintroduz o
-vocabulário do alvo por outro caminho. **Se você for construir um conjunto G3, classifique a pergunta
-final — não o par de nós.** Caso contrário você mede G1 achando que mede G3.
+Os nós somam pontos pros seus arquivos, os 5 melhores arquivos passam, e só os nós **dentro deles**
+são devolvidos. Aqui entra o último tempero: arquivo tocado no git nos últimos 30 dias leva **×3**.
 
-> **A leitura honesta:** o que está demonstrado aqui é **economia de token** — a mesma resposta com
-> uma fração do contexto, e isso se sustentou em toda medição (6.2x, acerto 20/24). **Superioridade
-> sobre `grep` não está demonstrada** — e note que "não demonstrada" é diferente de "refutada", que é
-> o que este parágrafo afirmava até 29/07/2026 ("a pouca evidência que existe aponta contra"). Só o
-> G2 tem defeito medido e real; o conjunto de G3 era inválido. As amostras são pequenas e não decidem
-> nada sozinhas, mas são as únicas que existem, e seria desonesto escondê-las atrás de um número
-> agregado bonito — ou endurecê-las em veredito, que é o erro oposto e foi o que aconteceu aqui.
->
-> Se você publicar números do seu retriever, publique a **composição** junto: sem ela, "MRR 0.76"
-> pode significar coisas muito diferentes.
+O peso é ×3 e não mais porque isso foi medido: [a ×50 ele deixava de ser desempate e virava termo
+dominante](MEDICOES.md#-o-que-estes-números-não-provam) — qualquer arquivo recém-editado batia
+qualquer arquivo relevante. A recência casa por **caminho completo**, nunca por nome: senão todo
+`utils.py` de um projeto Django ganharia o bônus junto.
 
-### E conte tool calls, não só tokens
+### 7. Pergunta ampla tem outra porta
 
-Uma corrida real de agente (headless, transcript medido) expôs um custo que o nosso benchmark
-**não enxergava**. Na pergunta mais difícil do conjunto, o motor acertou o alvo na **2ª chamada** —
-e o agente gastou **mais 15 chamadas** de leitura e busca só para descobrir *onde o arquivo mora*.
+*"Como funciona este projeto?"* não é pergunta de travessia — é pergunta de resumo. O motor detecta
+esse formato (e descarta qualquer pergunta que nomeie um identificador) e devolve o resumo do
+projeto, **com a data e a idade dele visíveis**. Resumo velho apresentado como se fosse de hoje é
+pior que resumo nenhum.
 
-Causa: a resposta trazia `src=` **relativo à raiz do projeto**, e quem consome não sabe qual é essa
-raiz. Emitir a raiz e caminhos absolutos levou a mesma pergunta de **17 tool calls para 2**.
-
-| | antes | depois |
-|---|---|---|
-| chamadas ao grafo | 1 | 1 |
-| leitura/busca de arquivo | **15** | **0** |
-| **total** | **17** | **2** |
-
-> **Um índice que devolve um endereço que o leitor não consegue abrir cobra em tool call o que
-> economizou em token.** Um benchmark que mede só o token do retorno nunca vê essa conta — a nossa
-> métrica de 6.2x não via.
-
-Se você mede retrieval para agente, meça **tool calls até a resposta**. É a unidade que o usuário
-paga em latência, em contexto e em paciência.
+---
 
 ## 🚀 Instalação
 
@@ -278,40 +172,23 @@ cp projects.example.json projects.json      # liste os SEUS repos: { name, root 
 graphify update "/caminho/absoluto/do/meu-backend"
 
 # pergunte
-node ask.mjs "onde o token de autenticação é validado" meu-backend
+node ask.mjs "onde o token de autenticação é validado" meu-backend --termos "auth,token,validate"
 node ask.mjs --lista                          # projetos que já têm grafo
-
-# meça o recall no seu próprio gabarito
-cp reports/golden-questions.example.json reports/golden-questions.json   # edite com SUAS perguntas
-node harness-recall.mjs
 ```
 
-> ⚠️ **No primeiro uso, passe `--termos`.** O cache de tradução (`.rewrite-cache.json`) **não
-> vem no clone** — ele guarda identificadores dos projetos do autor, então é ignorado pelo git.
-> Num clone limpo ele está vazio, e uma pergunta em português contra código em inglês cai no
-> léxico puro: o motor **avisa** (`rewrite=sem-termos`), mas o resultado será ruim.
->
-> Isso não é um defeito a contornar — é o desenho. **Quem pergunta traduz melhor que qualquer
-> ponte automática**, porque conhece a conversa; medido, o braço de termos vale 3 a 4 respostas
-> a mais. O cache existe só pra quem chama sem um modelo do lado (cron, script, você no bash).
+> ⚠️ **No primeiro uso, passe `--termos`.** O cache de tradução (`.rewrite-cache.json`) **não vem
+> no clone** — ele guarda identificadores dos projetos do autor, então é ignorado pelo git. Num
+> clone limpo ele está vazio, e uma pergunta em português contra código em inglês cai no léxico
+> puro: o motor **avisa** (`rewrite=sem-termos`), mas o resultado será ruim.
 >
 > Pelo **MCP** o problema não aparece: o modelo hospedeiro preenche os termos sozinho.
 
-**Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo — pula o cache/léxico-só) ·
-`--sem-rewrite` (desliga o braço de termos — é assim que se mede o baseline) ·
-`--cru` (bruto, sem re-rank).
+**Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo) · `--sem-rewrite` (desliga o braço de
+termos — é assim que se mede o baseline) · `--cru` (bruto, sem re-rank).
 
-> **`--motor=graphify` foi removida em 25/08/2026.** Ela ligava o braço de comparação do A/B
-> contra o `graphify` puro, e o A/B fechou em 29/07. O motivo do corte não foi o peso morto:
-> **aquele comparador era enviesado.** Ele casava recência de arquivo por *basename*, que é
-> exatamente o defeito que o motor novo já tinha consertado casando por caminho completo — dois
-> arquivos de mesmo nome em pastas diferentes contavam como um só de um lado da comparação e não
-> do outro. O adversário corria manco, e toda margem publicada pende para o mesmo lado.
->
-> **Isso não derruba o veredito** — a diferença é grande demais pra ser só o viés, e o motor
-> próprio continua. Mas o número não pode mais ser citado como se fosse limpo. Última medição
-> antes do corte, com a régua ainda torta: **motor próprio 21/24 · MRR 0,636 × caminho graphify
-> 14/24 · MRR 0,519**.
+**Env:** `CEREBRO_LEXICO=legado|bm25|prefixo` · `CEREBRO_W_BEMNOMEADO` · `CEREBRO_MIN_IDENT` ·
+`CEREBRO_MIN_PREFIXO` · `CEREBRO_W_RECENTE` · `CEREBRO_CACHE_RO=1` (não grava no cache — obrigatório
+em qualquer medição).
 
 ## 🔌 Como ferramenta MCP (Claude Desktop, Cursor, Antigravity…)
 
@@ -331,33 +208,54 @@ expõe duas ferramentas: **`ask_graph`** e **`list_projects`**. No `claude_deskt
 }
 ```
 
-Zero dependência — o protocolo MCP é implementado à mão (o projeto é vanilla por escolha).
+Zero dependência em runtime — o protocolo MCP é implementado à mão (o projeto é vanilla por
+escolha). O servidor mantém o grafo em RAM entre chamadas, revalidando por `mtime` a cada consulta.
 
-## 🔬 Como funciona
+## 🧪 Testes
 
-```mermaid
-flowchart LR
-    Q["pergunta<br/>(qualquer idioma)"] --> S{seleção de seed}
-    S -->|léxico + IDF| A[seeds léxicos]
-    S -->|rewrite PT→EN<br/>termos de quem pergunta| B[seeds traduzidos]
-    A --> BFS[BFS próprio<br/>no graph.json]
-    B --> BFS
-    BFS --> RRF["Reciprocal Rank Fusion<br/>k=60"]
-    RRF --> C[top-5 arquivos<br/>que respondem]
-    style Q fill:#0a0f30,stroke:#39d353,color:#eee
-    style C fill:#16213e,stroke:#f0a13a,color:#eee
-    style RRF fill:#1a1a2e,stroke:#9d8cff,color:#eee
+```bash
+npm test          # 62 testes em node:test, ~150ms, zero dependência em runtime
+npm run typecheck # JSDoc + @ts-check (usa typescript, em devDependencies)
 ```
 
-A ponte de idioma é o pulo do gato: você pergunta *"onde mantém a **pontuação**"* e o motor encontra
-`split_string_by_punctuations` mesmo o código estando **todo em inglês**.
+A suíte trava os seis botões que decidem o ranking — âncora de prefixo, `k` do RRF, amortecimento de
+grau, profundidade e teto do BFS, penalidade de genérico. Cada um foi verificado por mutação: quebre
+qualquer um deles no motor e um teste fica vermelho.
+
+## 📊 Medido
+
+| caminho do motor | recall | hit@3 | MRR |
+|---|:---:|:---:|:---:|
+| `--termos` de quem pergunta (produção) | 20/24 | 17/24 | **0.701** |
+| acerto no cache de rewrite | **21/24** | 17/24 | 0.636 |
+| `--sem-rewrite` (baseline) | 17/24 | 14/24 | 0.533 |
+
+Num segundo gabarito, **construído ao contrário de propósito** e nunca usado pra ajustar nada:
+**14/14 · MRR 0.869**.
+
+> 📖 **[O registro completo está em `MEDICOES.md`](MEDICOES.md)** — o método, a composição dos
+> gabaritos, o que estes números **não** provam, e as três vezes em que o projeto publicou um número
+> errado e teve que se corrigir em público. Se você for comparar com o seu retriever, leia aquilo
+> antes: um número agregado sem a composição do gabarito não quer dizer quase nada.
+
+## ⚠️ Escopo e limites (honestos)
+
+- **100% local, sem chave nenhuma:** os termos vêm de QUEM PERGUNTA (você digitando `--termos`, ou o
+  modelo que chama via MCP). Sem termos, cai pro cache local; sem cache, busca léxica.
+- **Escala de REPO, não de monorepo gigante:** o `graph.json` é carregado inteiro na memória. Pra
+  repos pessoais/médios (centenas–milhares de nós) voa; um monorepo de centenas de MB um dia pediria
+  índice em disco (SQLite/DuckDB).
+- **O grafo pode ficar velho:** este é só o **buscador**. Depois de um refactor grande, rode
+  `graphify update` de novo (a camada de auto-sync não faz parte deste engine).
+- **Cegueira semântica:** a AST enxerga chamada explícita. Injeção de dependência, decorators mágicos
+  e roteamento dinâmico não viram aresta.
 
 ## 📚 De onde veio (nada se cria, tudo se copia)
 
 - Ranking do repo-map do **[aider](https://aider.chat/2023/10/22/repomap.html)** — o `sqrt(refs)` é o que
   impede símbolo frequente de dominar.
 - A ponte de idioma é **[HyDE](https://arxiv.org/abs/2212.10496)**-adjacente (reescrita da consulta).
-- Fusão por **[RRF](https://dl.acm.org/doi/10.1145/1571941.1572114)** (k=60).
+- Fusão por **[RRF](https://dl.acm.org/doi/10.1145/1571941.1572114)** (k=60), Cormack 2009.
 - Embeddings **de propósito não** são usados: a ponte de rewrite já dá recall total nos alvos que existem
   no grafo, e (como a **[Cody](https://sourcegraph.com/blog/how-cody-understands-your-codebase)** concluiu)
   não valiam o custo de manter o índice. Ficam pré-fiados como um 4º braço do RRF, se um gabarito maior um
@@ -366,21 +264,9 @@ A ponte de idioma é o pulo do gato: você pergunta *"onde mantém a **pontuaç�
 ## 🧭 Princípios
 
 - **O grafo é o índice; o arquivo é a verdade.** Ele aponta; você confirma no código.
-- **Se o número parece bom demais, o método está errado.** Aqui os números são medidos e o método vem junto.
+- **Se o número parece bom demais, o método está errado.** Aqui os números são medidos e a régua vem junto.
 - **Medir antes de construir.** O braço de embeddings não foi feito porque o dado não pediu.
-
-## ⚠️ Escopo e limites (honestos)
-
-- **100% local, sem chave nenhuma:** a ponte de tradução da pergunta (rewrite) não faz mais chamada de
-  rede — os termos vêm de QUEM PERGUNTA (você digitando `--termos`, ou o modelo que chama via MCP).
-  Sem termos, cai pro cache local; sem cache, busca léxica (`--sem-rewrite` força isso).
-- **Escala de REPO, não de monorepo gigante:** o `graph.json` é carregado inteiro na memória. Pra
-  repos pessoais/médios (centenas–milhares de nós) voa; um monorepo de centenas de MB um dia pediria
-  índice em disco (SQLite/DuckDB).
-- **O grafo pode ficar velho:** este é só o **buscador**. Depois de um refactor grande, rode
-  `graphify update` de novo (a camada de auto-sync não faz parte deste engine).
-- **Heurísticas ajustáveis:** os pesos são afinados pra nomes descritivos (Python/JS). Em Go/C (nome
-  curto), destrave via env: `CEREBRO_W_BEMNOMEADO=1 CEREBRO_MIN_IDENT=4`.
+- **Degrade tem nome.** Toda resposta diz por qual caminho passou. Silêncio seria o pior defeito.
 
 ## 📄 Licença
 
