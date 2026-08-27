@@ -1,0 +1,40 @@
+# O vigia deixa de depender de alguém lembrar.
+#
+# Por que existe: este repositório é o gêmeo público de um motor mantido à mão em dois lugares.
+# Os dois já divergiram, e o preço foi concreto — uma guarda de segurança aplicada num lado só,
+# invisível porque nada perguntava. Do lado privado quem pergunta é o painel de sinais vitais;
+# aqui, do lado de quem clona, quem pergunta é isto.
+#
+# `scan-pessoal.mjs` roda junto de propósito: ele nasceu depois de um passo humano ser pulado e
+# um dado pessoal chegar ao GitHub. Vigia que depende de memória é vigia com folga marcada.
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22: o motor usa import.meta.dirname, que é 21+.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Zero dependência em runtime; o `npm ci` só existe por causa do typescript de devDep.
+      - run: npm ci
+
+      - name: testes
+        run: npm test
+
+      - name: tipos
+        run: npm run typecheck
+
+      # Sai 0 quando limpo. Avisa em voz alta quando não encontra a lista de padrões PESSOAIS —
+      # que é local e nunca versionada — porque "não olhei" não pode passar por "está limpo".
+      - name: vigia de dados pessoais
+        run: node scan-pessoal.mjs
