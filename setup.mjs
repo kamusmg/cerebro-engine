@@ -290,6 +290,27 @@ if (!checaNode()) process.exit(1);
 if (!checaGraphify()) process.exit(1);
 garanteProjectsJson();
 
+// ---------- 0. o vigia de push ----------
+// Antes de qualquer outra coisa, porque é o único passo que protege ALGUÉM DE FORA: se este clone
+// virar um repo de onde se empurra, o vigia de dados pessoais tem que rodar sozinho no push.
+// Falhar aqui não impede o resto — é aviso, não bloqueio, porque nem todo clone empurra.
+function instalaVigiaDePush() {
+  passo(0, 'vigia de push (roda o scan de dados pessoais antes de todo push)');
+  if (!fs.existsSync(path.join(REPO, '.git'))) {
+    info('não é um clone git — nada a instalar, e nada a proteger.');
+    return;
+  }
+  const r = roda('git', ['-C', REPO, 'config', 'core.hooksPath', 'hooks']);
+  if (r.erro) { nao(`não consegui configurar o hook: ${r.erro}`); return; }
+  // "o comando saiu 0" não é "está configurado" — a lição que este instalador já aprendeu no
+  // passo do graphify. Confere depois de agir.
+  const conf = roda('git', ['-C', REPO, 'config', '--get', 'core.hooksPath']);
+  if (conf.saida?.trim() === 'hooks') ok('hooks/pre-push ativo — push com dado pessoal é abortado');
+  else nao('configurei, mas o git não confirmou. Rode à mão: git config core.hooksPath hooks');
+}
+
+instalaVigiaDePush();
+
 const alvo = process.argv.slice(2).find((a) => !a.startsWith('--'));
 
 if (!alvo) {
@@ -299,6 +320,7 @@ if (!alvo) {
   console.log('Isso registra, indexa e faz uma pergunta de verdade pra provar que funciona.');
   process.exit(0);
 }
+
 
 const projeto = registraProjeto(alvo);
 if (!projeto) process.exit(1);
