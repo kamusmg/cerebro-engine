@@ -207,4 +207,6 @@ export interface ProjectConfig {
   root: string;
   /** Mirror: a local copy of code that lives somewhere else, so it may be stale. */
   espelho?: boolean;
+  /** Registered by the auto-discovery pass rather than by hand. */
+  auto?: boolean;
 }
