@@ -205,4 +205,6 @@ export interface ProjectConfig {
   name: string;
   /** Absolute path to project root directory */
   root: string;
+  /** Mirror: a local copy of code that lives somewhere else, so it may be stale. */
+  espelho?: boolean;
 }
