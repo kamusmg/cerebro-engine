@@ -1,0 +1,24 @@
+#!/bin/sh
+# pre-push — o vigia deixa de depender de alguém lembrar de rodá-lo.
+#
+# Por que aqui e não na CI: a lista de padrões PESSOAIS (`.scan-pessoal.local.json`) é local e
+# gitignorada de propósito — mandá-la pro GitHub, mesmo como secret, seria resolver um vazamento
+# criando outro. Então a CI roda o vigia em meia força (só os padrões genéricos, e diz isso em voz
+# alta), e a força total roda AQUI, onde a lista mora, no último instante antes de algo sair.
+#
+# Foi um passo humano pulado que já deixou dado pessoal chegar ao GitHub uma vez. Passo que
+# depende de memória não é controle.
+#
+# Instalação:  git config core.hooksPath hooks     (o setup.mjs faz isso por você)
+# Pular, num caso excepcional e consciente:  git push --no-verify
+
+set -e
+
+raiz=$(git rev-parse --show-toplevel)
+
+if ! node "$raiz/scan-pessoal.mjs"; then
+  echo ""
+  echo "PUSH ABORTADO: o vigia achou dado pessoal acima."
+  echo "Corrija, ou use 'git push --no-verify' se souber exatamente por que está ignorando isto."
+  exit 1
+fi
