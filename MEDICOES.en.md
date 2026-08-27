@@ -56,7 +56,19 @@ first. All three are now measured side by side, in the same run:
 |---|:---:|:---:|:---:|
 | `--termos` supplied by the caller | 20/24 | 17/24 | **0.701** |
 | rewrite-cache hit | **21/24** | 17/24 | 0.636 |
-| `--sem-rewrite` (no term arm) | 17/24 | 14/24 | 0.533 |
+| `--sem-rewrite` (no term arm) | 17/24 | 14/24 | 0.512 |
+> ⚠ **Re-checked on 2026-08-26 with the ruler fixed.** The production path reproduced to the third
+> decimal: **20/24 · 17/24 · 0.701**. The baseline did **not**: MRR **0.512** against the 0.533
+> published before. It was not the ruler fix — the previous harness, unchanged, also gives 0.512
+> today — nor recency, which does not move the number when switched off. **The cause remains
+> unknown**, and it is written down that way instead of dressed up. The cache row cannot run in this
+> clone (its `.rewrite-cache.json` is empty), but it was re-checked on the author's twin engine and
+> reproduced **exactly: 21/24 · 17/24 · 0.636**. And the baseline gives 0.512 on BOTH engines today —
+> two different codebases, same number: the gap against 0.533 is not in the code.
+>
+> And the hits are matched by **basename**: the golden set carries no paths, so the directory is
+> not verified. A `utils.py` from the wrong folder would count. The harness now **prints that
+> count on every run** instead of leaving it hidden among the hits that do prove the directory.
 
 Two readings. **The term arm pays for itself**: 3 to 4 more answers found than the baseline, and
 +0.10 to +0.17 MRR. And the production path **trades one hit for a clearly better rank** — which

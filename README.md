@@ -199,11 +199,12 @@ Se o `graphify` não estiver no PATH depois de instalado (acontece no Windows), 
 > Pelo **MCP** o problema não aparece: o modelo hospedeiro preenche os termos sozinho.
 
 **Flags:** `--termos "a,b,c"` (traduz a pergunta você mesmo) · `--sem-rewrite` (desliga o braço de
-termos — é assim que se mede o baseline) · `--cru` (bruto, sem re-rank).
+termos — é assim que se mede o baseline) · `--grafo` (força a travessia mesmo numa pergunta ampla).
 
-**Env:** `CEREBRO_LEXICO=legado|bm25|prefixo` · `CEREBRO_W_BEMNOMEADO` · `CEREBRO_MIN_IDENT` ·
-`CEREBRO_MIN_PREFIXO` · `CEREBRO_W_RECENTE` · `CEREBRO_CACHE_RO=1` (não grava no cache — obrigatório
-em qualquer medição).
+**Env** — as 10 que o código lê: `CEREBRO_LEXICO=legado|bm25|prefixo` · `CEREBRO_W_BEMNOMEADO` ·
+`CEREBRO_W_GENERICO` · `CEREBRO_MIN_IDENT` · `CEREBRO_MIN_PREFIXO` · `CEREBRO_W_RECENTE` ·
+`CEREBRO_BM25_K1` · `CEREBRO_BM25_B` · `CEREBRO_SEM_REWRITE` · `CEREBRO_CACHE_RO=1` (não grava no
+cache — obrigatório em qualquer medição).
 
 ## 🔌 Como ferramenta MCP (Claude Desktop, Cursor, Antigravity…)
 
@@ -243,7 +244,19 @@ qualquer um deles no motor e um teste fica vermelho.
 |---|:---:|:---:|:---:|
 | `--termos` de quem pergunta (produção) | 20/24 | 17/24 | **0.701** |
 | acerto no cache de rewrite | **21/24** | 17/24 | 0.636 |
-| `--sem-rewrite` (baseline) | 17/24 | 14/24 | 0.533 |
+| `--sem-rewrite` (baseline) | 17/24 | 14/24 | 0.512 |
+> ⚠ **Reconferido em 26/08/2026, com a régua consertada.** O caminho de produção reproduziu na
+> terceira casa: **20/24 · 17/24 · 0.701**. O baseline **não**: deu MRR **0.512** contra os 0.533
+> publicados antes. Não foi o conserto da régua — o harness anterior, sem uma linha mudada, dá
+> 0.512 hoje também — nem a recência, que desligada não move o número. **A causa continua
+> desconhecida**, e fica escrito assim em vez de virar explicação bonita. A linha do cache não roda
+> neste clone (o `.rewrite-cache.json` aqui está vazio), mas foi reconferida no motor gêmeo do autor
+> e reproduziu **exata: 21/24 · 17/24 · 0.636**. E o baseline dá 0.512 nos DOIS motores hoje — dois
+> códigos diferentes, mesmo número: a diferença contra o 0.533 não está no código.
+>
+> E os acertos são casados por **basename**: o gabarito não carrega caminho, então a pasta não é
+> verificada. Um `utils.py` da pasta errada contaria. O harness agora **imprime esse número em
+> toda rodada**, em vez de deixá-lo escondido no meio dos acertos que provam a pasta.
 
 Num segundo gabarito, **construído ao contrário de propósito** e nunca usado pra ajustar nada:
 **14/14 · MRR 0.869**.

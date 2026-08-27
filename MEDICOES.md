@@ -56,7 +56,19 @@ lado a lado, na mesma execução:
 |---|:---:|:---:|:---:|
 | `--termos` vindos de quem pergunta | 20/24 | 17/24 | **0.701** |
 | acerto no cache de rewrite | **21/24** | 17/24 | 0.636 |
-| `--sem-rewrite` (sem o braço de termos) | 17/24 | 14/24 | 0.533 |
+| `--sem-rewrite` (sem o braço de termos) | 17/24 | 14/24 | 0.512 |
+> ⚠ **Reconferido em 26/08/2026, com a régua consertada.** O caminho de produção reproduziu na
+> terceira casa: **20/24 · 17/24 · 0.701**. O baseline **não**: deu MRR **0.512** contra os 0.533
+> publicados antes. Não foi o conserto da régua — o harness anterior, sem uma linha mudada, dá
+> 0.512 hoje também — nem a recência, que desligada não move o número. **A causa continua
+> desconhecida**, e fica escrito assim em vez de virar explicação bonita. A linha do cache não roda
+> neste clone (o `.rewrite-cache.json` aqui está vazio), mas foi reconferida no motor gêmeo do autor
+> e reproduziu **exata: 21/24 · 17/24 · 0.636**. E o baseline dá 0.512 nos DOIS motores hoje — dois
+> códigos diferentes, mesmo número: a diferença contra o 0.533 não está no código.
+>
+> E os acertos são casados por **basename**: o gabarito não carrega caminho, então a pasta não é
+> verificada. Um `utils.py` da pasta errada contaria. O harness agora **imprime esse número em
+> toda rodada**, em vez de deixá-lo escondido no meio dos acertos que provam a pasta.
 
 Duas leituras. **O braço de termos paga**: 3 a 4 respostas a mais que o baseline, e +0,10 a +0,17
 de MRR. E o caminho de produção **troca um acerto por um ranking claramente melhor** — o que faz

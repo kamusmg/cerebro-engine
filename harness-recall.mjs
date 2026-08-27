@@ -77,20 +77,40 @@ function roda(pergunta, projeto, flags) {
     erro = String(e.stderr || e.message).split('\n').find(Boolean)?.slice(0, 90) ?? 'falhou';
   }
   const srcs = [];
-  for (const l of saida.split('\n')) { const m = SRC_RE.exec(l); if (m) srcs.push(path.basename(m[1])); }
+  for (const l of saida.split('\n')) { const m = SRC_RE.exec(l); if (m) srcs.push(m[1]); }
   // procedência do rewrite: o número muda se veio do cache, do Gemini ao vivo, ou de léxico-só
   // depois de um 429 — e o relatório não dizia qual. Clone novo = outro número, sem aviso.
   const origem = /rewrite=(\S+)/.exec(saida)?.[1] ?? '?';
   return { srcs, bytes: saida.length, erro, origem };
 }
 
+// A BASENAME HIT DOES NOT PROVE THE DIRECTORY (2026-08-26). The ruler compared
+// `path.basename(src)` against the target: any `utils.py`, `index.ts` or `__init__.py` among the
+// 5 returned files counted as a hit, whether it came from the right folder or not. It is the SAME
+// defect this repo had already diagnosed and removed from the recency boost ("matching just
+// utils.py would crown the wrong file") — it survived inside the instrument that measures the fix.
+//
+// Now: a target WITH a slash is a root-relative path, matched by path suffix. A target with no
+// slash still falls back to basename (the old golden format keeps working), but that hit is
+// COUNTED SEPARATELY and printed in the aggregate — a number that does not prove the directory
+// must not hide among the ones that do.
+const normSep = (p) => p.split('\\').join('/');
+
+const casa = (src, alvo) => {
+  const s = normSep(src), a = normSep(alvo);
+  return a.includes('/') ? (s === a || s.endsWith('/' + a)) : s.slice(s.lastIndexOf('/') + 1) === a;
+};
+
 function avalia(srcs, alvos) {
-  const idx = srcs.findIndex((s) => alvos.includes(s));
+  const idx = srcs.findIndex((s) => alvos.some((a) => casa(s, a)));
+  // did the hit come from a target carrying a path? then the directory was verified.
+  const soBasename = idx >= 0 && !alvos.some((a) => normSep(a).includes('/') && casa(srcs[idx], a));
   return {
     recall: idx >= 0 ? 1 : 0,
     hit3: idx >= 0 && idx < 3 ? 1 : 0,
     rr: idx >= 0 ? 1 / (idx + 1) : 0,
     nos: srcs.length,
+    soBasename: soBasename ? 1 : 0,
   };
 }
 
@@ -121,7 +141,7 @@ const acc = {};
 // melhorado (ajustar a régua pra agradar o resultado). Deixá-la calada é pior: uma pergunta que
 // nunca mais passa vira desculpa pronta pro próximo miss REAL ("ah, esse é o conhecido"). Então
 // ela fica, falha, e é contada SEPARADO — com os dois números na tela, sempre.
-for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {}, aposentadas: 0, recallVivas: 0, hit3Vivas: 0, rrVivas: 0, amputadas: 0 };
+for (const [nome] of motores) acc[nome] = { recall: 0, hit3: 0, rr: 0, nos: 0, erros: 0, origens: {}, aposentadas: 0, recallVivas: 0, hit3Vivas: 0, rrVivas: 0, amputadas: 0, soBasename: 0 };
 
 // AN AMPUTATED ENGINE IS NOT AN ENGINE THAT MISSED (guard added 2026-08-25).
 // When no terms are supplied and the cache has no entry, the engine falls back to lexical-only
@@ -143,8 +163,19 @@ const linhas = [];
 for (const q of golden) {
   const row = { pergunta: q.pergunta.slice(0, 40), projeto: q.projeto };
   for (const [nome, modo] of motores) {
+    // NO TERMS IN TERMS MODE = AMPUTATED, not valid (2026-08-26). Before, a golden question with
+    // no `termos` field ran with no flag at all — byte for byte the 'cache' column — and the
+    // result was summed into the 'chamador' aggregate. The arm the column exists to measure did
+    // not take part. Same artifact CEREBRO_CACHE_RO was born to kill: thermometer reading
+    // something else.
+    if (modo === 'termos' && !q.termos?.length) {
+      row[nome] = { amputada: true };
+      acc[nome].amputadas++;
+      console.error(`  ~ ${nome} AMPUTATED on "${q.pergunta.slice(0, 30)}": golden entry has no terms`);
+      continue;
+    }
     const flags = modo === 'baseline' ? ['--sem-rewrite']
-      : modo && q.termos?.length ? ['--termos', q.termos.join(',')] : [];
+      : modo ? ['--termos', q.termos.join(',')] : [];
     const { srcs, erro, origem } = roda(q.pergunta, q.projeto, flags);
     if (erro) {
       // não soma zero: marca ERRO e conta separado, senão "não rodou" vira "errou"
@@ -165,6 +196,7 @@ for (const q of golden) {
     const m = avalia(srcs, q.alvos);
     row[nome] = m;
     acc[nome].recall += m.recall; acc[nome].hit3 += m.hit3; acc[nome].rr += m.rr; acc[nome].nos += m.nos;
+    acc[nome].soBasename += m.soBasename;
     if (q.aposentado) acc[nome].aposentadas++;
     else { acc[nome].recallVivas += m.recall; acc[nome].hit3Vivas += m.hit3; acc[nome].rrVivas += m.rr; }
   }
@@ -195,4 +227,5 @@ for (const [nome] of motores) {
   if (proc) console.log(`  ${' '.repeat(10)} rewrite: ${proc}`);
   if (a.erros) console.log(`  ${' '.repeat(10)} ⚠ ${a.erros} pergunta(s) NÃO RODARAM (erro do motor) — fora do agregado`);
   if (a.amputadas) console.log(`  ${' '.repeat(10)} ~ ${a.amputadas} pergunta(s) AMPUTADAS (sem termos/cache) — fora do agregado`);
+  if (a.soBasename) console.log(`  ${' '.repeat(10)} ⚠ ${a.soBasename} acerto(s) casado(s) só por BASENAME — a pasta NÃO foi verificada`);
 }
