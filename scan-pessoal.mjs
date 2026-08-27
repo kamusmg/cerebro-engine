@@ -60,8 +60,9 @@ if (existsSync(LOCAL)) {
     const cfg = JSON.parse(readFileSync(LOCAL, 'utf8'));
     /** @param {unknown} s @returns {string} */
     const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Palavra inteira, sem distinguir maiúscula. O `\b` evita que "<projeto-privado>" case dentro de
-    // "arguments" e transforme o vigia em ruído.
+    // Palavra inteira, sem distinguir maiúscula. Sem o `\b`, um nome curto de projeto casa dentro
+    // de uma palavra maior — o caso real que motivou isto foi um nome de 4 letras acendendo o
+    // alarme dentro de `arguments`. Alarme errado ensina a ignorar o alarme.
     if (cfg.identidade?.length) PADROES.push([new RegExp(`\\b(${cfg.identidade.map(esc).join('|')})\\b`, 'i'), 'identidade do autor']);
     if (cfg.projetos?.length) PADROES.push([new RegExp(`\\b(${cfg.projetos.map(esc).join('|')})\\b`, 'i'), 'nome de projeto privado']);
     temLista = Boolean(cfg.identidade?.length || cfg.projetos?.length);
