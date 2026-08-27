@@ -16,6 +16,9 @@
     "retrieval.mjs",
     "mcp-server.mjs",
     "ask.mjs",
+    "generate-golden.mjs",
+    "harness-recall.mjs",
+    "scan-pessoal.mjs",
     "types.d.ts"
   ]
 }

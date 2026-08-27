@@ -74,11 +74,16 @@ function roda(cmd, args, opts = {}) {
  * idioma do Windows, ao contrário da frase — que ainda chega com acento corrompido pelo codepage
  * do console, e por isso é só o último recurso, com regex tolerante.
  */
-/** @param {any} e @returns {string} */
+/** @param {unknown} e @returns {string} */
 function classifica(e) {
-  if (e.code === 'ENOENT') return 'ENOENT';
-  if (e.status === 9009 || e.status === 127) return 'ENOENT';
-  const txt = String(e.stderr || e.message || e);
+  // Um erro de spawn no Node carrega três coisas ao mesmo tempo: `code` do libuv, `status` do
+  // processo e `stderr` capturado. Nenhum tipo pronto do Node cobre os três juntos, então a
+  // forma vai declarada aqui — estreitar `unknown` para ISTO é diferente de aceitar `any`:
+  // um typo em `e.statuss` continua sendo erro de compilação.
+  const err = /** @type {NodeJS.ErrnoException & {status?: number, stderr?: unknown}} */ (e);
+  if (err.code === 'ENOENT') return 'ENOENT';
+  if (err.status === 9009 || err.status === 127) return 'ENOENT';
+  const txt = String(err.stderr || err.message || err);
   if (/not recognized as an internal|command not found|n.o . reconhecido como um comando/i.test(txt)) return 'ENOENT';
   return txt.trim();
 }

@@ -36,7 +36,32 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * @typedef {import('./types.d.ts').Node} Node
+ * @typedef {import('./types.d.ts').RawGraph} RawGraph
+ * @typedef {import('./types.d.ts').ProjectConfig} ProjectConfig
+ *
+ * @typedef {object} Candidato
+ * @property {string} projeto
+ * @property {string} pergunta
+ * @property {string[]} alvos
+ * @property {string[]} termos
+ * @property {string} tipo
+ * @property {number} scoreQualidade
+ * @property {string|number} comunidade
+ * @property {string|undefined} sourceFile
+ * @property {string} simbolo
+ * @property {string} nota
+ *
+ * A entrada do gabarito é MAIS ESTREITA que o candidato: só o que o harness lê.
+ * @typedef {Pick<Candidato, 'projeto'|'pergunta'|'alvos'|'termos'|'nota'>} EntradaGolden
+ */
+
 // ---------- PRNG determinístico (Mulberry32) pra benchmarks reproduzíveis ----------
+/**
+ * @param {number} seed
+ * @returns {() => number} gerador no intervalo [0,1)
+ */
 function criaPrng(seed) {
   let s = Math.trunc(seed) >>> 0;
   return function random() {
@@ -47,6 +72,12 @@ function criaPrng(seed) {
   };
 }
 
+/**
+ * @template T
+ * @param {T[]} array
+ * @param {() => number} rng
+ * @returns {T[]} cópia embaralhada — a entrada não é tocada
+ */
 function embaralha(array, rng) {
   const a = [...array];
   for (let i = a.length - 1; i > 0; i--) {
@@ -57,10 +88,13 @@ function embaralha(array, rng) {
 }
 
 // ---------- Utilitários de texto e identificadores ----------
+/** @param {unknown} s @returns {string} */
 const semAcento = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+/** @param {unknown} s @returns {string} */
 const normaliza = (s) => semAcento(String(s).toLowerCase().trim());
 
 // Quebra camelCase, snake_case e kebab-case em palavras individuais
+/** @param {unknown} s @returns {string[]} */
 function extraiPalavras(s) {
   return semAcento(String(s))
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -71,6 +105,7 @@ function extraiPalavras(s) {
 }
 
 // Limpa docstrings/comentários removendo marcadores e tags JSDoc/Sphinx/Rustdoc
+/** @param {unknown} raw @returns {string} */
 function limpaDocstring(raw) {
   if (!raw) return '';
   const semTags = String(raw)
@@ -109,6 +144,7 @@ const EXTENSOES_CODIGO = new Set([
 ]);
 
 // ---------- Resolução de projeto e caminho do grafo ----------
+/** @param {string[]} args @returns {{grafoPath: string|null, projNome: string|null}} */
 function descobreGrafoEProjeto(args) {
   const pos = args.filter((a) => !a.startsWith('-'));
   const argAlvo = pos[0];
@@ -116,6 +152,7 @@ function descobreGrafoEProjeto(args) {
   const iProj = args.indexOf('--projeto');
   const nomeProjFlag = iProj >= 0 && args[iProj + 1] ? args[iProj + 1] : null;
 
+  /** @type {ProjectConfig[]} */
   let projectsList = [];
   const projectsFile = path.join(REPO, 'projects.json');
   if (fs.existsSync(projectsFile)) {
@@ -156,25 +193,48 @@ function descobreGrafoEProjeto(args) {
     }
   }
 
-  // 4. Se não passou alvo, busca o primeiro projeto disponível com grafo em projects.json
-  for (const p of projectsList) {
-    if (!p.root) continue;
-    const g = path.join(p.root, 'graphify-out', 'graph.json');
-    if (fs.existsSync(g)) {
-      return { grafoPath: g, projNome: p.name };
+  // ALVO QUE NAO CASA NAO PODE VIRAR OUTRO PROJETO (26/08/2026). O comentario abaixo sempre disse
+  // "se nao passou alvo" — mas nao existia o `if (!argAlvo)`, entao um nome desconhecido caia
+  // aqui e levava o PRIMEIRO projeto da lista. Medido: `generate-golden.mjs projeto-que-nao-existe`
+  // gerava um gabarito inteiro do <projeto-privado>, saia com codigo 0, e nada avisava. Gabarito do
+  // projeto errado e pior que gabarito nenhum: ele mede, publica numero, e o numero nao e do que
+  // voce pediu.
+  // 4. SÓ quando não passou alvo: o primeiro projeto da lista que tenha grafo.
+  //
+  // O `if (!argAlvo)` é o conserto de 26/08/2026. O comentário sempre disse "se não passou alvo",
+  // mas a condição não existia: um nome desconhecido caía aqui e levava o PRIMEIRO projeto da
+  // lista. Medido antes do conserto: `generate-golden.mjs projeto-que-nao-existe` gerava um
+  // gabarito inteiro do <projeto-privado> e saía com código 0. Gabarito do projeto errado é pior que
+  // gabarito nenhum — ele mede, publica número, e o número não é do que você pediu.
+  if (!argAlvo) {
+    for (const p of projectsList) {
+      if (!p.root) continue;
+      const g = path.join(p.root, 'graphify-out', 'graph.json');
+      if (fs.existsSync(g)) {
+        return { grafoPath: g, projNome: p.name };
+      }
     }
   }
 
   // 5. Fallback local em ./graphify-out/graph.json
+  // 5. Grafo do próprio repositório. Vale sem alvo — e também COM alvo, desde que o alvo seja o
+  // nome desta pasta: é assim que `generate-golden.mjs cerebro-engine` funciona, já que este repo
+  // não se registra no próprio projects.json. Qualquer outro nome não resolvido cai fora.
+  const nomeLocal = path.basename(REPO);
   const localGrafo = path.join(REPO, 'graphify-out', 'graph.json');
-  if (fs.existsSync(localGrafo)) {
-    return { grafoPath: localGrafo, projNome: nomeProjFlag || 'cerebro-engine' };
+  if ((!argAlvo || argAlvo === nomeLocal) && fs.existsSync(localGrafo)) {
+    return { grafoPath: localGrafo, projNome: nomeProjFlag || nomeLocal };
   }
 
   return { grafoPath: null, projNome: null };
 }
 
 // ---------- Geração de perguntas sintéticas ----------
+/**
+ * @param {RawGraph} grafo
+ * @param {string} nomeProjeto
+ * @returns {Candidato[]}
+ */
 export function extraiCandidatos(grafo, nomeProjeto) {
   const nodes = grafo.nodes ?? [];
   const links = grafo.links ?? [];
@@ -206,6 +266,7 @@ export function extraiCandidatos(grafo, nomeProjeto) {
   const candidatos = [];
 
   // Templates de variação de pergunta em Português e Inglês
+  /** @type {((d: string) => string)[]} */
   const templatesDocstringPT = [
     (d) => d,
     (d) => `onde fica ${d.toLowerCase()}`,
@@ -213,6 +274,7 @@ export function extraiCandidatos(grafo, nomeProjeto) {
     (d) => `como é feito ${d.toLowerCase()}`,
   ];
 
+  /** @type {((d: string) => string)[]} */
   const templatesDocstringEN = [
     (d) => d,
     (d) => `where is ${d.toLowerCase()}`,
@@ -220,6 +282,7 @@ export function extraiCandidatos(grafo, nomeProjeto) {
     (d) => `handles ${d.toLowerCase()}`,
   ];
 
+  /** @type {((w: string) => string)[]} */
   const templatesSimboloPT = [
     (w) => `onde fica a função ${w}`,
     (w) => `onde a lógica de ${w} é implementada`,
@@ -228,6 +291,7 @@ export function extraiCandidatos(grafo, nomeProjeto) {
     (w) => w,
   ];
 
+  /** @type {((w: string) => string)[]} */
   const templatesSimboloEN = [
     (w) => `where is ${w} implemented`,
     (w) => `function that handles ${w}`,
@@ -318,6 +382,11 @@ export function extraiCandidatos(grafo, nomeProjeto) {
 }
 
 // Seleciona e balanceia um conjunto representativo de perguntas
+/**
+ * @param {Candidato[]} candidatos
+ * @param {{limite?: number, seed?: number}} [opts]
+ * @returns {EntradaGolden[]}
+ */
 export function selecionaGoldenSet(candidatos, { limite = 24, seed = 42 } = {}) {
   const rng = criaPrng(seed);
   const embaralhados = embaralha(candidatos, rng);
@@ -414,7 +483,9 @@ Exemplos:
 
   const { grafoPath, projNome } = descobreGrafoEProjeto(args);
 
-  if (!grafoPath || !fs.existsSync(grafoPath)) {
+  // projNome entra na guarda junto com o grafoPath (26/08/2026): os dois saem nulos no mesmo
+  // ramo do descobreGrafoEProjeto, mas so um estava conferido. O typecheck apontou.
+  if (!grafoPath || !projNome || !fs.existsSync(grafoPath)) {
     console.error(`Erro: graph.json não encontrado.\n
 Especifique o caminho do grafo ou o nome do projeto configurado em projects.json:
   node generate-golden.mjs <caminho/para/graph.json> --projeto <nome>
@@ -430,7 +501,7 @@ Especifique o caminho do grafo ou o nome do projeto configurado em projects.json
   try {
     grafo = JSON.parse(fs.readFileSync(grafoPath, 'utf8'));
   } catch (e) {
-    console.error(`Falha ao ler graph.json: ${e.message}`);
+    console.error(`Falha ao ler graph.json: ${/** @type {Error} */ (e).message}`);
     process.exit(1);
   }
 

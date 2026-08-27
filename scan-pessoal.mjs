@@ -42,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
 // Genéricos: valem pra qualquer pessoa que use este repo, e não revelam nada de ninguém.
+/** @type {[RegExp, string][]} */
 const PADROES = [
   [/[A-Za-z]:[\\/](Users|Projetos|projetos)/i, 'caminho absoluto de Windows'],
   [/\/(home|Users)\/[a-z0-9_-]+\//i, 'caminho absoluto de home'],
@@ -57,6 +58,7 @@ let temLista = false;
 if (existsSync(LOCAL)) {
   try {
     const cfg = JSON.parse(readFileSync(LOCAL, 'utf8'));
+    /** @param {unknown} s @returns {string} */
     const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Palavra inteira, sem distinguir maiúscula. O `\b` evita que "<projeto-privado>" case dentro de
     // "arguments" e transforme o vigia em ruído.
@@ -65,7 +67,7 @@ if (existsSync(LOCAL)) {
     temLista = Boolean(cfg.identidade?.length || cfg.projetos?.length);
   } catch (e) {
     // lista ilegível é FALHA: seguir sem ela seria rodar meio vigia achando que é vigia inteiro
-    console.error(`!! ${LOCAL} ilegível (${e.message}) — corrija ou remova. NÃO faça push.`);
+    console.error(`!! ${LOCAL} ilegível (${/** @type {Error} */ (e).message}) — corrija ou remova. NÃO faça push.`);
     process.exit(1);
   }
 }
@@ -97,7 +99,7 @@ try {
     windowsHide: true,
   }).split('\n').filter(Boolean);
 } catch (e) {
-  console.error(`!! falha ao executar git ls-files em ${raiz} (${e.message})`);
+  console.error(`!! falha ao executar git ls-files em ${raiz} (${/** @type {Error} */ (e).message})`);
   process.exit(1);
 }
 
@@ -112,7 +114,8 @@ for (const arq of rastreados) {
   // é exatamente o defeito que este script existe pra impedir.
   const caminhoCompleto = join(raiz, arq);
   try { texto = readFileSync(caminhoCompleto, 'utf8'); } catch (e) {
-    console.error(`?? ${arq}: não consegui ler (${e.code ?? e.message}) — confira à mão`);
+    const err = /** @type {NodeJS.ErrnoException} */ (e);
+    console.error(`?? ${arq}: não consegui ler (${err.code ?? err.message}) — confira à mão`);
     achados++;
     continue;
   }

@@ -35,6 +35,46 @@ const REPO = import.meta.dirname;
 // relatório e pra memória. Medidor que troca de régua sozinho não mede: produz números que parecem
 // da mesma série histórica e não são. Agora é explícito (`--golden`) ou o do autor, nada de
 // fallback — e o nome da régua vai colado no agregado, onde ninguém consegue copiar sem levar.
+/**
+ * @typedef {object} PerguntaGolden
+ * @property {string} pergunta
+ * @property {string} projeto
+ * @property {string[]} alvos
+ * @property {string[]} [termos]
+ * @property {boolean} [aposentado]
+ *
+ * @typedef {object} Medida
+ * @property {number} recall
+ * @property {number} hit3
+ * @property {number} rr
+ * @property {number} nos
+ * @property {number} soBasename
+ *
+ * @typedef {{erro: string} | {amputada: true} | Medida} Celula
+ *
+ * O MODO É UMA UNIÃO FECHADA, não uma string qualquer: 'termos' passa --termos, null não passa
+ * flag nenhuma (é o braço do cache), 'baseline' passa --sem-rewrite. Deixar isso como string
+ * solta foi o que permitiu, por semanas, que a coluna 'chamador' rodasse igual à 'cache'.
+ * @typedef {'termos' | 'baseline' | null} ModoMotor
+ *
+ * @typedef {object} Acumulador
+ * @property {number} recall
+ * @property {number} hit3
+ * @property {number} rr
+ * @property {number} nos
+ * @property {number} erros
+ * @property {Record<string, number>} origens
+ * @property {number} aposentadas
+ * @property {number} recallVivas
+ * @property {number} hit3Vivas
+ * @property {number} rrVivas
+ * @property {number} amputadas
+ * @property {number} soBasename
+ *
+ * Uma linha da tabela: duas colunas fixas e uma célula por motor, indexada pelo NOME do motor.
+ * @typedef {{pergunta: string, projeto: string} & Record<string, string|Celula>} Linha
+ */
+
 const args = process.argv.slice(2);
 const iGolden = args.indexOf('--golden');
 if (iGolden >= 0 && !args[iGolden + 1]) {
@@ -50,9 +90,10 @@ try {
   golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
 } catch (e) {
   // "não achei" e "achei quebrado" são resultados diferentes e recebem mensagens diferentes.
-  console.error(e.code === 'ENOENT'
+  const errGolden = /** @type {NodeJS.ErrnoException} */ (e);
+  console.error(errGolden.code === 'ENOENT'
     ? `${path.relative(REPO, GOLDEN)} not found.\n\nThis file is not shipped — the author's questions point at private repos. To measure\nyour own engine, build a set with the shape of reports/golden-questions.example.json:\neach entry needs { projeto, pergunta, alvos: ["file-that-should-be-found.js"] }.\nThen run: node harness-recall.mjs --golden <your-file.json>`
-    : `${path.relative(REPO, GOLDEN)} could not be parsed: ${e.message}`);
+    : `${path.relative(REPO, GOLDEN)} could not be parsed: ${errGolden.message}`);
   process.exit(1);
 }
 
@@ -64,6 +105,12 @@ const SRC_RE = /^NODE .+? \[src=(.+?) loc=/;
 // o resultado era `recall 0` limpo: numa máquina sem o `graphify` no PATH, o relatório sairia
 // "graphify 0/24" e ninguém saberia que ele nunca rodou. Isso é o pecado capital do projeto
 // aplicado justamente à métrica que JUSTIFICA o projeto. Agora falha é `erro`, não zero.
+/**
+ * @param {string} pergunta
+ * @param {string} projeto
+ * @param {string[]} flags
+ * @returns {{srcs: string[], bytes: number, erro: string|null, origem: string}}
+ */
 function roda(pergunta, projeto, flags) {
   let saida = '';
   let erro = null;
@@ -73,8 +120,11 @@ function roda(pergunta, projeto, flags) {
         // the thermometer must not change the temperature — see the note above `motores`
         env: { ...process.env, CEREBRO_CACHE_RO: '1' } });
   } catch (e) {
-    saida = e.stdout ?? '';
-    erro = String(e.stderr || e.message).split('\n').find(Boolean)?.slice(0, 90) ?? 'falhou';
+    // stdout e stderr chegam juntos no erro de um execFileSync que saiu != 0; nenhum tipo do
+    // Node cobre os dois, então a forma vai declarada — estreitamento, não `any`.
+    const err = /** @type {Error & {stdout?: string, stderr?: string}} */ (e);
+    saida = err.stdout ?? '';
+    erro = String(err.stderr || err.message).split('\n').find(Boolean)?.slice(0, 90) ?? 'falhou';
   }
   const srcs = [];
   for (const l of saida.split('\n')) { const m = SRC_RE.exec(l); if (m) srcs.push(m[1]); }
@@ -94,13 +144,16 @@ function roda(pergunta, projeto, flags) {
 // slash still falls back to basename (the old golden format keeps working), but that hit is
 // COUNTED SEPARATELY and printed in the aggregate — a number that does not prove the directory
 // must not hide among the ones that do.
+/** @param {string} p @returns {string} */
 const normSep = (p) => p.split('\\').join('/');
 
+/** @param {string} src @param {string} alvo @returns {boolean} */
 const casa = (src, alvo) => {
   const s = normSep(src), a = normSep(alvo);
   return a.includes('/') ? (s === a || s.endsWith('/' + a)) : s.slice(s.lastIndexOf('/') + 1) === a;
 };
 
+/** @param {string[]} srcs @param {string[]} alvos @returns {Medida} */
 function avalia(srcs, alvos) {
   const idx = srcs.findIndex((s) => alvos.some((a) => casa(s, a)));
   // did the hit come from a target carrying a path? then the directory was verified.
@@ -134,7 +187,9 @@ function avalia(srcs, alvos) {
 // 'chamador' path writes the measurement's own terms into the rewrite cache, and the 'cache'
 // arm then returns those same terms — both arms collapse into one number and the baseline dies
 // inside the measurement. Caught happening.
+/** @type {[string, ModoMotor][]} */
 const motores = [['chamador', 'termos'], ['cache', null], ['sem-rewrite', 'baseline']];
+/** @type {Record<string, Acumulador>} */
 const acc = {};
 // PERGUNTA APOSENTADA (04/08/2026): quando o código-alvo é retirado do projeto de propósito, a
 // pergunta não vira errada — vira INAPLICÁVEL. Apagá-la faria o recall subir sem nada ter
@@ -161,6 +216,7 @@ const AMPUTADAS = new Set(['falhou', 'sem-chave', 'sem-termos']);
 
 const linhas = [];
 for (const q of golden) {
+  /** @type {Linha} */
   const row = { pergunta: q.pergunta.slice(0, 40), projeto: q.projeto };
   for (const [nome, modo] of motores) {
     // NO TERMS IN TERMS MODE = AMPUTATED, not valid (2026-08-26). Before, a golden question with
@@ -205,10 +261,20 @@ for (const q of golden) {
 
 const N = golden.length;
 console.log(`\nRECALL — ${N} perguntas do gabarito [${relGolden}] (ground truth por grep no repo mapeado)\n`);
-const col = (m) => !m ? '     ' : m.erro ? 'ERRO       ' : m.amputada ? 'AMPUTADA   ' : `${m.recall ? '✓' : '·'}${m.hit3 ? '³' : ' '} r${(m.rr ?? 0).toFixed(2)}`;
+/** @param {Celula|undefined} m @returns {string} */
+// Estreita pela PRESENÇA da chave, não pela verdade do valor: a célula é uma união fechada
+// (erro | amputada | medida), e `'erro' in m` é o que diz ao leitor — e ao compilador — qual dos
+// três casos está na mão. O ternário encadeado que morava aqui lia igual, mas não distinguia
+// "não tem a chave" de "tem a chave com valor falso".
+const col = (m) => {
+  if (!m) return '     ';
+  if ('erro' in m) return 'ERRO       ';
+  if ('amputada' in m) return 'AMPUTADA   ';
+  return `${m.recall ? '✓' : '·'}${m.hit3 ? '³' : ' '} r${m.rr.toFixed(2)}`;
+};
 console.log('projeto        pergunta                                  ' + motores.map(([n]) => n.padEnd(12)).join(''));
 for (const r of linhas) {
-  console.log(r.projeto.padEnd(14) + ' ' + r.pergunta.padEnd(42) + motores.map(([n]) => col(r[n]).padEnd(12)).join(''));
+  console.log(r.projeto.padEnd(14) + ' ' + r.pergunta.padEnd(42) + motores.map(([n]) => col(/** @type {Celula|undefined} */ (r[n])).padEnd(12)).join(''));
 }
 // A régua vai COLADA no agregado, não num rótulo lá em cima: é esta linha que a gente copia pro
 // relatório e pra memória, e um número sem a régua ao lado não pertence a série nenhuma.
