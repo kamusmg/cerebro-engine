@@ -135,7 +135,12 @@ if (achados) {
 }
 // "não tenho a lista pessoal" e "a lista não achou nada" são resultados DIFERENTES, e sair pela
 // mesma porta seria o pecado que este arquivo inteiro existe pra impedir.
-console.log(`limpo — ${rastreados.length} arquivos varridos, nada dos padrões genéricos.`);
+// A frase dizia "nada dos padrões genéricos" mesmo quando a lista pessoal TINHA rodado — ou seja,
+// descrevia menos trabalho do que foi feito. Errar pra menos ainda é errar: quem lê não sabe o que
+// foi conferido. Agora a frase nomeia exatamente o que rodou.
+console.log(temLista
+  ? `limpo — ${rastreados.length} arquivos varridos, padrões genéricos E pessoais.`
+  : `limpo — ${rastreados.length} arquivos varridos, nada dos padrões genéricos.`);
 if (!temLista) {
   console.log('⚠️  sem `.scan-pessoal.local.json`: os padrões PESSOAIS (nome, projetos privados)');
   console.log('   NÃO foram checados. Isto é "não olhei", não "está limpo".');

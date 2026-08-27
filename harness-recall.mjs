@@ -11,10 +11,14 @@
 //   • rank    — position of the 1st target NODE (for MRR)
 //   • nodes   — number of NODE lines (cheap proxy for tokens)
 //
-// Last full run (2026-08-25, author's golden set, 24 questions):
+// Last full run (2026-08-26, author's golden set, 24 questions, ruler fixed):
 //   chamador     recall 20/24 · hit@3 17/24 · MRR 0.701   <- production path
-//   cache        recall 21/24 · hit@3 17/24 · MRR 0.636
-//   sem-rewrite  recall 17/24 · hit@3 14/24 · MRR 0.533   <- baseline
+//   cache        recall 21/24 · hit@3 17/24 · MRR 0.636   <- measured on the twin engine
+//   sem-rewrite  recall 17/24 · hit@3 14/24 · MRR 0.512   <- baseline
+//
+// The baseline read 0.533 until 2026-08-25 and does NOT reproduce: 0.512 today, on BOTH twin
+// engines, with the pre-fix harness giving the same 0.512. Cause unknown, written down as such.
+// Every hit here is matched by basename — the golden set carries no paths. See MEDICOES.md.
 //
 // Usage: node harness-recall.mjs
 import fs from 'node:fs';
@@ -85,6 +89,7 @@ const GOLDEN = iGolden >= 0
   ? path.resolve(args[iGolden + 1])
   : path.join(REPO, 'reports', 'golden-questions.json');
 
+/** @type {PerguntaGolden[]} */
 let golden;
 try {
   golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
@@ -230,8 +235,12 @@ for (const q of golden) {
       console.error(`  ~ ${nome} AMPUTATED on "${q.pergunta.slice(0, 30)}": golden entry has no terms`);
       continue;
     }
+    // Passada a guarda acima, o modo 'termos' TEM termos — mas isso é uma verdade do fluxo, não
+    // do tipo, e o compilador não a enxerga. Em vez de calar com um cast, a verdade vira dado:
+    // se algum dia a guarda for removida, `termos` cai vazio e a coluna denuncia o rewrite.
+    const termos = q.termos ?? [];
     const flags = modo === 'baseline' ? ['--sem-rewrite']
-      : modo ? ['--termos', q.termos.join(',')] : [];
+      : modo === 'termos' ? ['--termos', termos.join(',')] : [];
     const { srcs, erro, origem } = roda(q.pergunta, q.projeto, flags);
     if (erro) {
       // não soma zero: marca ERRO e conta separado, senão "não rodou" vira "errou"

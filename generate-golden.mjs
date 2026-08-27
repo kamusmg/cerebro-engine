@@ -193,18 +193,12 @@ function descobreGrafoEProjeto(args) {
     }
   }
 
-  // ALVO QUE NAO CASA NAO PODE VIRAR OUTRO PROJETO (26/08/2026). O comentario abaixo sempre disse
-  // "se nao passou alvo" — mas nao existia o `if (!argAlvo)`, entao um nome desconhecido caia
-  // aqui e levava o PRIMEIRO projeto da lista. Medido: `generate-golden.mjs projeto-que-nao-existe`
-  // gerava um gabarito inteiro do <projeto-privado>, saia com codigo 0, e nada avisava. Gabarito do
-  // projeto errado e pior que gabarito nenhum: ele mede, publica numero, e o numero nao e do que
-  // voce pediu.
   // 4. SÓ quando não passou alvo: o primeiro projeto da lista que tenha grafo.
   //
   // O `if (!argAlvo)` é o conserto de 26/08/2026. O comentário sempre disse "se não passou alvo",
   // mas a condição não existia: um nome desconhecido caía aqui e levava o PRIMEIRO projeto da
   // lista. Medido antes do conserto: `generate-golden.mjs projeto-que-nao-existe` gerava um
-  // gabarito inteiro do <projeto-privado> e saía com código 0. Gabarito do projeto errado é pior que
+  // gabarito inteiro de OUTRO projeto e saía com código 0. Gabarito do projeto errado é pior que
   // gabarito nenhum — ele mede, publica número, e o número não é do que você pediu.
   if (!argAlvo) {
     for (const p of projectsList) {
