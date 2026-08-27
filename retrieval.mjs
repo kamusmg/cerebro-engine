@@ -111,7 +111,7 @@ const hash = (s) => {
   return h.toString(16);
 };
 
-// ---------- query-rewrite: a ponte semântica PT→EN (Gemini free, cacheado, com fallback) ----------
+// ---------- query-rewrite: a ponte semântica PT→EN (termos do chamador · cache local) ----------
 // "NÃO EXISTE" E "EXISTE QUEBRADO" SÃO RESULTADOS DIFERENTES (2026-08-26). Este helper devolvia o
 // padrão nos dois casos, e quem paga a conta é o cache de rewrite logo abaixo: um
 // `.rewrite-cache.json` corrompido virava `{}`, a pergunta caía no caminho `sem-termos` — o
@@ -531,8 +531,10 @@ export async function consultar({ grafoPath, raiz: raizDir, pergunta, termos, se
     rrf.set(id, s);
   }
 
-  // corte por ARQUIVO (top-5) + reforço de recência do git (x50).
-  // Recência por CAMINHO COMPLETO, não basename: casar só "utils.py" daria o bônus ×50 a TODO
+  // corte por ARQUIVO (top-5) + reforço de recência do git: W_RECENTE, hoje ×3. O ×50 que a
+  // narrativa lá em cima conta foi DERRUBADO por medição — se este comentário voltar a dizer
+  // ×50, foi ele que envelheceu, não o código. Confira a constante, não a frase.
+  // Recência por CAMINHO COMPLETO, não basename: casar só "utils.py" daria o bônus a TODO
   // utils.py/index.js/__init__.py do repo (Next/Django) e coroaria o arquivo errado. git e o
   // source_file do graphify são ambos relativos à raiz — normaliza a barra e casa exato.
   /** @param {string} p */

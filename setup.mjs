@@ -20,7 +20,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.dirname(fileURLToPath(import.meta.url));
-const GRAPHIFY = process.env.GRAPHIFY_BIN ?? 'graphify';   // mesmo knob que o frescor.mjs usa
+const GRAPHIFY = process.env.GRAPHIFY_BIN ?? 'graphify';   // mesmo knob que o resto do motor usa
 const NODE_MINIMO = 22;
 const TIMEOUT_CURTO = 30_000;
 const TIMEOUT_INDEX = 900_000;   // indexar repo grande passa de 5 min; 15 é teto, não expectativa

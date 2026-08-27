@@ -26,7 +26,7 @@
 // The old path (graphify query + aider re-rank) was REMOVED on 2026-08-25 — see the block above
 // the `try`, together with the numbers it measured with a crooked ruler.
 //
-// Usage: node ask.mjs "<question>" <project> [--termos "a,b,c"] [--sem-rewrite] [--cru]
+// Usage: node ask.mjs "<question>" <project> [--termos "a,b,c"] [--sem-rewrite] [--grafo]
 //        node ask.mjs --lista
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -96,7 +96,9 @@ if (!existsSync(grafo)) {
 
 // Pergunta AMPLA ("como funciona", "o que é", "visão geral") puxava uma travessia grande
 // e cara que respondia mal — travessia serve pergunta ESPECÍFICA. Pra ampla existe o
-// resumo hierárquico (nível GraphRAG, resumo-projetos.mjs): serve ele e para. O grafo
+// resumo hierárquico em resumos/<projeto>.md, QUANDO EXISTIR: serve ele e para. O gerador
+// (resumo-projetos.mjs) saiu junto com o Gemini em 04/08/2026 — hoje esse arquivo é escrito à
+// mão, e sem ele a pergunta ampla não tem resposta nenhuma. O grafo
 // continua uma pergunta específica de distância; --grafo força a travessia mesmo assim.
 // (o portão mora no retrieval.mjs, compartilhado com o mcp-server.mjs)
 if (!resto.includes('--grafo')) {
