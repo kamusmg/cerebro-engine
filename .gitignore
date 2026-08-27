@@ -25,3 +25,9 @@ reports/recall.md
 # lista de padroes PESSOAIS do vigia (nome, projetos privados). Nunca versionar:
 # era exatamente isso que estava em texto puro dentro do scan-pessoal.mjs ate 25/08.
 .scan-pessoal.local.json
+
+# Gerados pela ferramentaria local, NUNCA versionados (26/08/2026): o `CLAUDE.md` que o
+# graphify escreve carrega o caminho ABSOLUTO da máquina do autor (`D:\...`), e o vigia
+# `scan-pessoal.mjs` reprova o push por causa dele. Barrar aqui é mais barato que lembrar.
+CLAUDE.md
+.graphifyignore
